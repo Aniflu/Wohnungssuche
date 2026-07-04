@@ -1,0 +1,26 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Dashboard (lokal)",
+      "type": "python",
+      "request": "launch",
+      "program": "${workspaceFolder}/app/dashboard.py",
+      "env": {
+        "DATA_DIR": "${workspaceFolder}/data",
+        "FLASK_DEBUG": "1"
+      },
+      "console": "integratedTerminal"
+    },
+    {
+      "name": "Crawler (lokal)",
+      "type": "python",
+      "request": "launch",
+      "program": "${workspaceFolder}/app/crawler.py",
+      "env": {
+        "DATA_DIR": "${workspaceFolder}/data"
+      },
+      "console": "integratedTerminal"
+    }
+  ]
+}

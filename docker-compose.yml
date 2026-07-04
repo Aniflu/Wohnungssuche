@@ -1,0 +1,17 @@
+services:
+  wohnungsmonitor:
+    build: .
+    container_name: wohnungsmonitor
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    volumes:
+      # Persistente Daten außerhalb des Containers
+      - ./data:/data
+    environment:
+      - TZ=Europe/Berlin
+    # Ressourcen begrenzen (optional, für schwache Server)
+    # deploy:
+    #   resources:
+    #     limits:
+    #       memory: 256m

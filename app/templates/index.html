@@ -1,0 +1,804 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#111217">
+<title>Wohnungsmonitor</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Syne:wght@700;800&display=swap');
+
+:root {
+  --bg: #0e0f13;
+  --surface: #14151a;
+  --surface2: #1c1d24;
+  --border: #2a2c35;
+  --accent: #ff6b35;
+  --accent2: #ff9500;
+  --green: #84cc16;
+  --red: #ef4444;
+  --text: #e8e8e4;
+  --muted: #666;
+  --new-bg: #161a12;
+  --new-border: #4a5c2a;
+  --nav-h: 64px;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+
+html, body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'DM Mono', monospace;
+  height: 100%;
+  overflow: hidden;
+}
+
+/* ── Header ─────────────────────────────────────────── */
+header {
+  background: #111217;
+  border-bottom: 1px solid var(--border);
+  padding: 0 16px;
+  height: 56px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  z-index: 200;
+}
+
+.logo { display: flex; align-items: center; gap: 10px; }
+.logo-icon {
+  width: 34px; height: 34px; border-radius: 8px;
+  background: linear-gradient(135deg, #ff6b35, #ff9500);
+  display: flex; align-items: center; justify-content: center; font-size: 16px;
+  flex-shrink: 0;
+}
+.logo-name {
+  font-family: 'Syne', sans-serif;
+  font-size: 15px; font-weight: 800; letter-spacing: 0.04em;
+}
+.logo-name span { color: var(--accent); }
+.logo-sub { font-size: 9px; color: var(--muted); letter-spacing: 0.1em; }
+
+.header-right { display: flex; align-items: center; gap: 10px; }
+.badge-new {
+  background: var(--accent); color: #fff;
+  border-radius: 20px; padding: 2px 10px;
+  font-size: 11px; font-weight: 700; display: none;
+}
+.dot-status { width: 8px; height: 8px; border-radius: 50%; background: var(--green); box-shadow: 0 0 6px var(--green); animation: pulse 2s infinite; }
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.35} }
+
+/* ── Scroll container ──────────────────────────────── */
+.page-wrap {
+  position: fixed;
+  top: 56px; bottom: var(--nav-h);
+  left: 0; right: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* ── Bottom nav ─────────────────────────────────────── */
+.bottom-nav {
+  position: fixed;
+  bottom: 0; left: 0; right: 0;
+  height: var(--nav-h);
+  background: #111217;
+  border-top: 1px solid var(--border);
+  display: flex;
+  z-index: 200;
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+.nav-item {
+  flex: 1; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 4px;
+  border: none; background: none; color: var(--muted);
+  font-family: inherit; font-size: 9px; letter-spacing: 0.08em;
+  cursor: pointer; padding: 8px 4px; transition: color .15s;
+}
+.nav-item .nav-icon { font-size: 20px; line-height: 1; }
+.nav-item.active { color: var(--accent); }
+.nav-badge {
+  position: absolute; top: 6px; right: calc(50% - 18px);
+  background: var(--accent); color: #fff;
+  border-radius: 10px; font-size: 9px; font-weight: 700;
+  padding: 1px 5px; display: none; pointer-events: none;
+}
+
+/* ── Screens ─────────────────────────────────────────── */
+.screen { display: none; min-height: 100%; }
+.screen.active { display: block; }
+
+/* ── Listings screen ─────────────────────────────────── */
+.listings-screen { padding: 12px 12px 20px; }
+
+.toolbar {
+  display: flex; gap: 8px; margin-bottom: 12px; align-items: center;
+}
+.search-box {
+  flex: 1; background: var(--surface2);
+  border: 1px solid var(--border); border-radius: 22px;
+  padding: 9px 14px; color: var(--text);
+  font-size: 13px; font-family: inherit; outline: none;
+}
+.search-box:focus { border-color: var(--accent); }
+.filter-toggle {
+  width: 38px; height: 38px; border-radius: 50%;
+  background: var(--surface2); border: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 16px; cursor: pointer; flex-shrink: 0;
+}
+.filter-toggle.active { border-color: var(--accent); background: #1f1510; }
+
+.chips { display: flex; gap: 6px; margin-bottom: 12px; overflow-x: auto; padding-bottom: 2px; scrollbar-width: none; }
+.chips::-webkit-scrollbar { display: none; }
+.chip {
+  white-space: nowrap; padding: 5px 12px; border-radius: 20px;
+  border: 1px solid var(--border); background: var(--surface2);
+  color: var(--muted); font-family: inherit; font-size: 11px; cursor: pointer;
+  transition: all .15s;
+}
+.chip.active { border-color: var(--accent); color: var(--accent); background: #1f1510; }
+
+/* ── Card ───────────────────────────────────────────── */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--border);
+  border-radius: 12px;
+  padding: 14px;
+  margin-bottom: 10px;
+  position: relative;
+}
+.card.is-new {
+  background: var(--new-bg);
+  border-color: var(--new-border);
+  border-left-color: var(--green);
+}
+.new-badge {
+  position: absolute; top: 10px; right: 10px;
+  background: var(--green); color: #0a0f02;
+  font-size: 9px; font-weight: 700;
+  padding: 2px 8px; border-radius: 20px; letter-spacing: 0.06em;
+}
+.card-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; margin-bottom: 6px; }
+.card-title { font-size: 13px; font-weight: 700; color: #fff; flex: 1; line-height: 1.4; }
+.card-title a { color: inherit; text-decoration: none; }
+.card-price { font-size: 17px; font-weight: 700; color: var(--accent2); white-space: nowrap; flex-shrink: 0; }
+.card-price small { font-size: 10px; color: var(--muted); font-weight: 400; }
+.card-meta { display: flex; flex-wrap: wrap; gap: 8px; font-size: 11px; color: #888; margin-bottom: 6px; }
+.card-desc { font-size: 11px; color: #666; line-height: 1.6; margin-bottom: 10px; }
+.card-footer { display: flex; justify-content: space-between; align-items: center; }
+.card-tag { font-size: 10px; color: var(--muted); background: var(--surface2); padding: 2px 8px; border-radius: 10px; max-width: 55%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.card-actions { display: flex; align-items: center; gap: 6px; }
+.card-time { font-size: 10px; color: #444; }
+.del-btn {
+  width: 28px; height: 28px; border-radius: 50%;
+  background: none; border: none; color: #444;
+  cursor: pointer; font-size: 14px;
+  display: flex; align-items: center; justify-content: center;
+  transition: all .15s;
+}
+.del-btn:active { background: #1a0a0a; color: var(--red); }
+
+/* ── Stats screen ───────────────────────────────────── */
+.stats-screen { padding: 16px 12px 20px; }
+.stats-screen h2 { font-size: 11px; letter-spacing: 0.1em; color: var(--muted); margin-bottom: 12px; }
+
+.stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 20px; }
+.stat-box {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 12px; padding: 14px;
+}
+.stat-val { font-size: 28px; font-weight: 700; color: var(--accent2); }
+.stat-val.green { color: var(--green); }
+.stat-lbl { font-size: 10px; color: var(--muted); letter-spacing: 0.08em; margin-top: 2px; }
+
+.action-list { display: flex; flex-direction: column; gap: 8px; }
+.action-btn {
+  width: 100%; padding: 14px 16px; border-radius: 12px;
+  border: 1px solid var(--border); background: var(--surface2);
+  color: var(--text); font-family: inherit; font-size: 13px;
+  text-align: left; cursor: pointer; display: flex; align-items: center; gap: 10px;
+  transition: background .15s;
+}
+.action-btn:active { background: var(--surface); }
+.action-btn .action-icon { font-size: 18px; }
+.action-btn.primary { background: linear-gradient(135deg, var(--accent), var(--accent2)); border: none; color: #fff; font-weight: 700; }
+.action-btn.danger { color: var(--red); border-color: #2a1515; }
+
+.last-check { font-size: 11px; color: #444; margin-top: 12px; text-align: center; }
+
+/* ── Filter drawer ─────────────────────────────────── */
+.filter-drawer {
+  display: none;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 14px;
+  margin-bottom: 12px;
+}
+.filter-drawer.open { display: block; }
+.filter-row { display: flex; gap: 8px; margin-top: 6px; }
+.filter-row input, .filter-row select {
+  flex: 1; background: var(--bg); border: 1px solid var(--border);
+  border-radius: 8px; padding: 8px 10px; color: var(--text);
+  font-size: 12px; font-family: inherit; outline: none;
+}
+.filter-row input:focus, .filter-row select:focus { border-color: var(--accent); }
+.filter-label { font-size: 10px; color: var(--muted); letter-spacing: 0.06em; margin-top: 10px; margin-bottom: 2px; }
+
+/* ── Config screen ──────────────────────────────────── */
+.config-screen { padding: 16px 12px 20px; }
+.config-screen h2 { font-size: 11px; letter-spacing: 0.1em; color: var(--muted); margin-bottom: 6px; }
+.config-info {
+  font-size: 11px; color: var(--muted); line-height: 1.7; margin-bottom: 14px;
+  background: var(--surface2); border-radius: 10px; padding: 12px;
+}
+.config-info code { color: var(--accent2); font-size: 11px; }
+#config-json {
+  width: 100%; background: var(--bg); border: 1px solid var(--border);
+  border-radius: 10px; padding: 12px; color: var(--text);
+  font-size: 11px; font-family: 'DM Mono', monospace; line-height: 1.7;
+  outline: none; min-height: 320px; resize: vertical;
+}
+#config-json:focus { border-color: var(--accent); }
+
+/* ── Log screen ──────────────────────────────────────── */
+.log-screen { padding: 12px 12px 20px; }
+.log-screen h2 { font-size: 11px; letter-spacing: 0.1em; color: var(--muted); margin-bottom: 12px; }
+.log-line {
+  font-size: 10.5px; padding: 5px 0;
+  border-bottom: 1px solid #1a1b21;
+  color: var(--muted); line-height: 1.5;
+  word-break: break-all;
+}
+.log-line.ok { color: var(--green); }
+.log-line.err { color: var(--red); }
+.log-line.warn { color: var(--accent2); }
+
+/* ── Empty / loading states ─────────────────────────── */
+.empty {
+  text-align: center; padding: 60px 20px;
+  color: var(--muted); font-size: 13px;
+}
+.empty-icon { font-size: 44px; margin-bottom: 12px; }
+.loading-text { color: var(--accent2); font-size: 12px; text-align: center; padding: 20px; }
+
+/* ── Desktop layout (>= 768px) ──────────────────────── */
+@media (min-width: 768px) {
+  :root { --nav-h: 0px; }
+
+  html, body { overflow: auto; height: auto; }
+
+  header { position: sticky; }
+
+  .page-wrap {
+    position: static;
+    display: flex;
+    align-items: flex-start;
+    min-height: calc(100vh - 56px);
+    overflow: visible;
+  }
+
+  .bottom-nav { display: none; }
+
+  /* Desktop sidebar */
+  .sidebar-desktop {
+    width: 260px;
+    flex-shrink: 0;
+    background: #111217;
+    border-right: 1px solid var(--border);
+    min-height: calc(100vh - 56px);
+    padding: 20px 16px;
+    display: flex !important;
+    flex-direction: column;
+    gap: 20px;
+    position: sticky;
+    top: 56px;
+    height: calc(100vh - 56px);
+    overflow-y: auto;
+  }
+  .sidebar-section-title { font-size: 10px; letter-spacing: 0.1em; color: var(--muted); margin-bottom: 10px; }
+  .sidebar-stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .sidebar-stat-box { background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; padding: 10px; }
+  .sidebar-stat-val { font-size: 22px; font-weight: 700; color: var(--accent2); }
+  .sidebar-stat-val.green { color: var(--green); }
+  .sidebar-stat-lbl { font-size: 10px; color: var(--muted); }
+  .sidebar-btn {
+    width: 100%; padding: 10px; border-radius: 8px; border: none;
+    font-family: inherit; font-size: 12px; font-weight: 700;
+    cursor: pointer; text-align: center; transition: opacity .2s;
+  }
+  .sidebar-btn.primary { background: linear-gradient(135deg, var(--accent), var(--accent2)); color: #fff; }
+  .sidebar-btn.secondary { background: var(--surface2); color: #aaa; border: 1px solid var(--border); font-weight: 500; }
+  .sidebar-btn:active { opacity: .8; }
+  .sidebar-input {
+    width: 100%; background: var(--bg); border: 1px solid var(--border);
+    border-radius: 6px; padding: 8px 10px; color: var(--text);
+    font-size: 12px; font-family: inherit; outline: none; margin-top: 4px;
+  }
+  .sidebar-input:focus { border-color: var(--accent); }
+  .sidebar-label { font-size: 11px; color: #888; margin-top: 8px; display: block; }
+
+  /* Desktop main area */
+  .desktop-main {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .desktop-tabs {
+    display: flex !important;
+    gap: 4px;
+    padding: 14px 20px 0;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+  }
+  .desktop-tab {
+    padding: 7px 16px; border-radius: 6px 6px 0 0;
+    border: 1px solid transparent; background: none;
+    color: var(--muted); font-size: 12px; cursor: pointer; font-family: inherit;
+  }
+  .desktop-tab.active { border-color: var(--border); border-bottom-color: var(--surface); background: var(--bg); color: var(--accent); }
+
+  /* Override mobile screens for desktop */
+  .screen { display: none !important; }
+  .desktop-screen { display: block; padding: 20px; }
+
+  /* Show all screens on desktop via tab logic */
+  .listings-screen, .config-screen, .log-screen { padding: 20px; }
+}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <div class="logo-icon">🏠</div>
+    <div>
+      <div class="logo-name">WOHNUNGS<span>MONITOR</span></div>
+      <div class="logo-sub">KLEINANZEIGEN TRACKER</div>
+    </div>
+  </div>
+  <div class="header-right">
+    <div id="badge-new" class="badge-new">0 NEU</div>
+    <div class="dot-status"></div>
+  </div>
+</header>
+
+<!-- ── Mobile: 4 screens ─────────────────────────────── -->
+<div class="page-wrap" id="page-wrap">
+
+  <!-- Desktop sidebar (hidden on mobile via CSS) -->
+  <div class="sidebar-desktop" id="sidebar-desktop" style="display:none">
+    <div>
+      <div class="sidebar-section-title">STATISTIK</div>
+      <div class="sidebar-stat-grid">
+        <div class="sidebar-stat-box">
+          <div class="sidebar-stat-val" id="sd-total">–</div>
+          <div class="sidebar-stat-lbl">GESAMT</div>
+        </div>
+        <div class="sidebar-stat-box">
+          <div class="sidebar-stat-val green" id="sd-new">–</div>
+          <div class="sidebar-stat-lbl">NEU</div>
+        </div>
+      </div>
+      <div style="font-size:10px;color:#444;margin-top:8px" id="sd-last"></div>
+    </div>
+    <div>
+      <div class="sidebar-section-title">FILTER</div>
+      <span class="sidebar-label">Freitextsuche</span>
+      <input class="sidebar-input" type="text" id="sd-search" placeholder="Altbau, Balkon…" oninput="filterListings()">
+      <span class="sidebar-label">Suche</span>
+      <select class="sidebar-input" id="sd-filter-search" onchange="filterListings()">
+        <option value="">Alle Suchen</option>
+      </select>
+      <div style="display:flex;gap:6px;margin-top:10px">
+        <button class="chip active" id="sd-btn-all" onclick="setFilter('all')" style="flex:1">Alle</button>
+        <button class="chip" id="sd-btn-new" onclick="setFilter('new')" style="flex:1">Nur Neue</button>
+      </div>
+    </div>
+    <div style="margin-top:auto;display:flex;flex-direction:column;gap:8px">
+      <button class="sidebar-btn primary" onclick="refreshNow()">↻ Jetzt aktualisieren</button>
+      <button class="sidebar-btn secondary" onclick="markAllSeen()">✓ Alle als gelesen</button>
+    </div>
+  </div>
+
+  <!-- Desktop main column -->
+  <div class="desktop-main" id="desktop-main" style="display:none">
+    <div class="desktop-tabs" id="desktop-tabs">
+      <button class="desktop-tab active" id="dt-listings" onclick="showDesktopTab('listings')">Inserate</button>
+      <button class="desktop-tab" id="dt-config" onclick="showDesktopTab('config')">Konfiguration</button>
+      <button class="desktop-tab" id="dt-log" onclick="showDesktopTab('log')">Log</button>
+    </div>
+    <div id="desktop-content"></div>
+  </div>
+
+  <!-- ── Screen: Inserate ── -->
+  <div class="screen active" id="screen-listings">
+    <div class="listings-screen">
+      <div class="toolbar">
+        <input class="search-box" type="text" id="mob-search" placeholder="🔍  Suche in Inseraten…" oninput="filterListings()">
+        <div class="filter-toggle" id="filter-toggle-btn" onclick="toggleFilterDrawer()">⚙</div>
+      </div>
+
+      <div class="filter-drawer" id="filter-drawer">
+        <div class="filter-label">SUCHE</div>
+        <div class="filter-row">
+          <select id="mob-filter-search" onchange="filterListings()">
+            <option value="">Alle Suchen</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="chips">
+        <button class="chip active" id="mob-btn-all" onclick="setFilter('all')">Alle</button>
+        <button class="chip" id="mob-btn-new" onclick="setFilter('new')">Nur Neue</button>
+      </div>
+
+      <div id="mob-listings-content">
+        <div class="loading-text">⏳ Lädt Inserate…</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Screen: Stats & Aktionen ── -->
+  <div class="screen" id="screen-stats">
+    <div class="stats-screen">
+      <h2>ÜBERSICHT</h2>
+      <div class="stat-grid">
+        <div class="stat-box">
+          <div class="stat-val" id="mob-stat-total">–</div>
+          <div class="stat-lbl">GESAMT</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-val green" id="mob-stat-new">–</div>
+          <div class="stat-lbl">NEU</div>
+        </div>
+      </div>
+      <div class="last-check" id="mob-last-check"></div>
+
+      <div style="height:20px"></div>
+      <h2>AKTIONEN</h2>
+      <div class="action-list">
+        <button class="action-btn primary" onclick="refreshNow()">
+          <span class="action-icon">↻</span> Jetzt aktualisieren
+        </button>
+        <button class="action-btn" onclick="markAllSeen()">
+          <span class="action-icon">✓</span> Alle als gelesen markieren
+        </button>
+        <button class="action-btn" onclick="showScreen('config')">
+          <span class="action-icon">⚙</span> Konfiguration bearbeiten
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Screen: Konfiguration ── -->
+  <div class="screen" id="screen-config">
+    <div class="config-screen">
+      <h2>KONFIGURATION</h2>
+      <div class="config-info">
+        Nach dem Speichern Crawler neu starten:<br>
+        <code>sudo systemctl restart wohnungsmonitor-crawler</code>
+      </div>
+      <textarea id="config-json" spellcheck="false"></textarea>
+      <div style="margin-top:10px">
+        <button class="action-btn primary" onclick="saveConfig()">
+          <span class="action-icon">💾</span> Speichern
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Screen: Log ── -->
+  <div class="screen" id="screen-log">
+    <div class="log-screen">
+      <h2>AKTIVITÄTS-LOG</h2>
+      <div id="mob-log-content">
+        <div class="loading-text">Lädt Log…</div>
+      </div>
+    </div>
+  </div>
+
+</div><!-- /page-wrap -->
+
+<!-- ── Bottom Navigation (mobile only) ─────────────── -->
+<nav class="bottom-nav">
+  <button class="nav-item active" id="nav-listings" onclick="showScreen('listings')">
+    <span class="nav-icon">🏠</span>
+    <span>Inserate</span>
+    <span class="nav-badge" id="nav-badge">0</span>
+  </button>
+  <button class="nav-item" id="nav-stats" onclick="showScreen('stats')">
+    <span class="nav-icon">📊</span>
+    <span>Übersicht</span>
+  </button>
+  <button class="nav-item" id="nav-config" onclick="showScreen('config'); loadConfig()">
+    <span class="nav-icon">⚙</span>
+    <span>Einstellung</span>
+  </button>
+  <button class="nav-item" id="nav-log" onclick="showScreen('log'); loadLog()">
+    <span class="nav-icon">📋</span>
+    <span>Log</span>
+  </button>
+</nav>
+
+<script>
+// ── State ──────────────────────────────────────────────
+let allListings = [];
+let filterMode  = 'all';
+let isDesktop   = false;
+let desktopTab  = 'listings';
+
+// ── Bootstrap ──────────────────────────────────────────
+function detectLayout() {
+  isDesktop = window.innerWidth >= 768;
+  document.getElementById('sidebar-desktop').style.display = isDesktop ? 'flex' : 'none';
+  document.getElementById('desktop-main').style.display    = isDesktop ? 'flex' : 'none';
+  // On desktop, hide mobile screens; they're rendered into desktop-content
+  if (isDesktop) showDesktopTab(desktopTab, false);
+}
+
+window.addEventListener('resize', detectLayout);
+
+async function init() {
+  detectLayout();
+  await loadStats();
+  await loadListings();
+  setInterval(async () => { await loadStats(); await loadListings(); }, 20000);
+}
+
+// ── Stats ──────────────────────────────────────────────
+async function loadStats() {
+  try {
+    const r = await fetch('/api/stats');
+    const s = await r.json();
+
+    // Mobile
+    document.getElementById('mob-stat-total').textContent = s.total;
+    document.getElementById('mob-stat-new').textContent   = s.new;
+
+    // Desktop sidebar
+    document.getElementById('sd-total').textContent = s.total;
+    document.getElementById('sd-new').textContent   = s.new;
+
+    const badge = document.getElementById('badge-new');
+    const navBadge = document.getElementById('nav-badge');
+    if (s.new > 0) {
+      badge.textContent = s.new + ' NEU';
+      badge.style.display = 'block';
+      navBadge.textContent = s.new;
+      navBadge.style.display = 'block';
+    } else {
+      badge.style.display = 'none';
+      navBadge.style.display = 'none';
+    }
+
+    if (s.last_found) {
+      const d = new Date(s.last_found);
+      const txt = 'Zuletzt: ' + d.toLocaleString('de-DE');
+      const el1 = document.getElementById('mob-last-check');
+      const el2 = document.getElementById('sd-last');
+      if (el1) el1.textContent = txt;
+      if (el2) el2.textContent = txt;
+    }
+
+    // Fill search dropdowns
+    ['mob-filter-search', 'sd-filter-search'].forEach(id => {
+      const sel = document.getElementById(id);
+      if (!sel) return;
+      const cur = sel.value;
+      sel.innerHTML = '<option value="">Alle Suchen</option>';
+      (s.searches || []).forEach(name => {
+        const o = document.createElement('option');
+        o.value = o.textContent = name;
+        sel.appendChild(o);
+      });
+      if (cur) sel.value = cur;
+    });
+  } catch(e) { console.error('Stats error', e); }
+}
+
+// ── Listings ───────────────────────────────────────────
+async function loadListings() {
+  try {
+    const r = await fetch('/api/listings');
+    allListings = await r.json();
+    renderListings();
+  } catch(e) { console.error(e); }
+}
+
+function filterListings() { renderListings(); }
+
+function setFilter(mode) {
+  filterMode = mode;
+  ['all','new'].forEach(m => {
+    const active = m === mode;
+    ['mob-btn-', 'sd-btn-'].forEach(pfx => {
+      const el = document.getElementById(pfx + m);
+      if (el) el.classList.toggle('active', active);
+    });
+  });
+  renderListings();
+}
+
+function getFilteredListings() {
+  const mobQ = (document.getElementById('mob-search')?.value || '').toLowerCase();
+  const sdQ  = (document.getElementById('sd-search')?.value  || '').toLowerCase();
+  const q    = mobQ || sdQ;
+
+  const mobSel = document.getElementById('mob-filter-search')?.value || '';
+  const sdSel  = document.getElementById('sd-filter-search')?.value  || '';
+  const selSearch = mobSel || sdSel;
+
+  return allListings.filter(l => {
+    if (filterMode === 'new' && !l.is_new) return false;
+    if (selSearch && l.search_name !== selSearch) return false;
+    if (q && !([l.title, l.description, l.location].join(' ').toLowerCase().includes(q))) return false;
+    return true;
+  });
+}
+
+function renderListings() {
+  const items = getFilteredListings();
+  const html  = items.length === 0
+    ? `<div class="empty"><div class="empty-icon">🔍</div>Keine Inserate.<br><small style="font-size:11px;color:#444">Crawler läuft im Hintergrund.</small></div>`
+    : items.map(cardHTML).join('');
+
+  const mob = document.getElementById('mob-listings-content');
+  if (mob) mob.innerHTML = html;
+
+  // Desktop: re-render if active
+  if (isDesktop && desktopTab === 'listings') {
+    const dc = document.getElementById('desktop-content');
+    if (dc) dc.innerHTML = `<div style="padding:20px;display:flex;flex-direction:column;gap:10px">${html}</div>`;
+  }
+}
+
+function cardHTML(l) {
+  const time = l.found_at ? new Date(l.found_at).toLocaleString('de-DE') : '';
+  const titleContent = l.url
+    ? `<a href="${l.url}" target="_blank">${esc(l.title)}</a>`
+    : esc(l.title);
+  return `
+  <div class="card ${l.is_new ? 'is-new' : ''}">
+    ${l.is_new ? '<div class="new-badge">NEU</div>' : ''}
+    <div class="card-top">
+      <div class="card-title">${titleContent}</div>
+      <div class="card-price">${esc(l.price || '–')}<small>/Mo</small></div>
+    </div>
+    ${l.location ? `<div class="card-meta"><span>📍 ${esc(l.location)}</span></div>` : ''}
+    ${l.description ? `<div class="card-desc">${esc(l.description)}</div>` : ''}
+    <div class="card-footer">
+      <span class="card-tag">${esc(l.search_name || '')}</span>
+      <div class="card-actions">
+        <span class="card-time">${time}</span>
+        <button class="del-btn" onclick="deleteListing('${esc(l.id)}')" title="Entfernen">✕</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+// ── Actions ────────────────────────────────────────────
+async function refreshNow() {
+  await loadStats();
+  await loadListings();
+}
+
+async function markAllSeen() {
+  await fetch('/api/mark_seen', { method: 'POST' });
+  await loadStats();
+  await loadListings();
+}
+
+async function deleteListing(id) {
+  await fetch('/api/delete/' + id, { method: 'DELETE' });
+  allListings = allListings.filter(l => l.id !== id);
+  renderListings();
+}
+
+// ── Config ─────────────────────────────────────────────
+async function loadConfig() {
+  const r = await fetch('/api/config');
+  const cfg = await r.json();
+  const el = document.getElementById('config-json');
+  if (el) el.value = JSON.stringify(cfg, null, 2);
+}
+
+async function saveConfig() {
+  try {
+    const val = document.getElementById('config-json').value;
+    const cfg = JSON.parse(val);
+    await fetch('/api/config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(cfg),
+    });
+    alert('✓ Gespeichert! Bitte Crawler-Service neu starten.');
+  } catch(e) { alert('Ungültiges JSON: ' + e.message); }
+}
+
+// ── Log ────────────────────────────────────────────────
+async function loadLog() {
+  const r = await fetch('/api/log');
+  const lines = await r.json();
+  const html = lines.map(line => {
+    const cls = line.includes('ERROR') ? 'err' : line.includes('WARNING') ? 'warn' : line.includes('neue') ? 'ok' : '';
+    return `<div class="log-line ${cls}">${esc(line)}</div>`;
+  }).join('');
+  const el = document.getElementById('mob-log-content');
+  if (el) el.innerHTML = html || '<div class="loading-text">Kein Log vorhanden.</div>';
+
+  // Desktop
+  if (isDesktop && desktopTab === 'log') {
+    const dc = document.getElementById('desktop-content');
+    if (dc) dc.innerHTML = `<div style="padding:20px">${html || '<div class="loading-text">Kein Log.</div>'}</div>`;
+  }
+}
+
+// ── Mobile navigation ──────────────────────────────────
+function showScreen(name) {
+  if (isDesktop) return;
+  ['listings','stats','config','log'].forEach(s => {
+    document.getElementById('screen-' + s).classList.toggle('active', s === name);
+    document.getElementById('nav-' + s).classList.toggle('active', s === name);
+  });
+  if (name === 'config') loadConfig();
+  if (name === 'log')    loadLog();
+}
+
+function toggleFilterDrawer() {
+  const drawer = document.getElementById('filter-drawer');
+  const btn    = document.getElementById('filter-toggle-btn');
+  drawer.classList.toggle('open');
+  btn.classList.toggle('active');
+}
+
+// ── Desktop tabs ───────────────────────────────────────
+async function showDesktopTab(name, render = true) {
+  desktopTab = name;
+  ['listings','config','log'].forEach(t => {
+    document.getElementById('dt-' + t)?.classList.toggle('active', t === name);
+  });
+  if (!render) return;
+
+  const dc = document.getElementById('desktop-content');
+  if (!dc) return;
+
+  if (name === 'listings') {
+    renderListings();
+  } else if (name === 'config') {
+    const r = await fetch('/api/config');
+    const cfg = await r.json();
+    dc.innerHTML = `
+      <div style="padding:20px">
+        <div class="config-info" style="margin-bottom:12px">
+          Nach dem Speichern Crawler neu starten:<br>
+          <code>sudo systemctl restart wohnungsmonitor-crawler</code>
+        </div>
+        <textarea id="config-json" spellcheck="false" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:14px;color:var(--text);font-size:12px;font-family:'DM Mono',monospace;line-height:1.7;outline:none;min-height:400px;resize:vertical">${JSON.stringify(cfg, null, 2)}</textarea>
+        <div style="margin-top:12px">
+          <button class="action-btn primary" onclick="saveConfig()" style="max-width:200px">💾 Speichern</button>
+        </div>
+      </div>`;
+  } else if (name === 'log') {
+    await loadLog();
+  }
+}
+
+// ── Helpers ────────────────────────────────────────────
+function esc(s) {
+  return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+init();
+</script>
+</body>
+</html>

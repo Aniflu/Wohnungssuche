@@ -1,0 +1,16 @@
+# Laufzeit-Daten (nicht ins Repo)
+data/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Docker
+*.tar
+
+# Editoren
+.DS_Store
+Thumbs.db
