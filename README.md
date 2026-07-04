@@ -30,18 +30,20 @@ Beim ersten Start wird automatisch `data/config.json` erstellt:
 {
   "searches": [
     {
-      "name": "Berlin – 1-2 Zimmer",
-      "city": "berlin",
-      "city_id": "l3331",
-      "min_rooms": 1,
-      "max_rooms": 2,
-      "min_price": 500,
-      "max_price": 1400,
-      "keywords": ""
+      "name": "Berlin – 3-5 Zimmer",
+      "postal_code": "10437",
+      "location_id": "3491",
+      "category_id": "203",
+      "radius_km": 5,
+      "min_rooms": 3,
+      "max_rooms": 5,
+      "no_swap": true,
+      "max_distance_km": 5
     }
   ],
   "check_interval_seconds": 300,
-  "max_listings_stored": 500
+  "max_listings_stored": 500,
+  "user_agent": "Mozilla/5.0 (X11; Linux x86_64; rv:125.0) Gecko/20100101 Firefox/125.0"
 }
 ```
 
@@ -51,18 +53,23 @@ Nach Änderungen an `data/config.json` den Container neu starten:
 docker compose restart
 ```
 
-### Stadtcodes (city_id)
+### Feldbeschreibung
 
-Die `city_id` steht in der URL auf kleinanzeigen.de wenn du dort suchst:
+| Feld | Typ | Beschreibung |
+|---|---|---|
+| `postal_code` | string | PLZ (nur für den URL-Aufbau) |
+| `location_id` | string | Kleinanzeigen-interne Orts-ID |
+| `category_id` | string | `"203"` = Wohnungen mieten |
+| `radius_km` | int | Suchradius (5 = Minimum bei Kleinanzeigen) |
+| `min_rooms` / `max_rooms` | int | Zimmeranzahl-Bereich |
+| `no_swap` | bool | `true` = keine Tauschwohnungen |
+| `max_distance_km` | int | Post-Filter: nur Inserate ≤ X km (aus dem Location-Text extrahiert) |
 
-| Stadt | city_id |
-|-------|---------|
-| Berlin | `l3331` |
-| Hamburg | `l1055` |
-| München | `l1276` |
-| Köln | `l1705` |
-| Frankfurt | `l1439` |
-| Stuttgart | `l1353` |
+**`postal_code` + `location_id` ermitteln:** Auf kleinanzeigen.de → Wohnungen mieten → Ort/PLZ eingeben → Filter setzen. Aus der Browser-URL `c{category_id}l{location_id}r{radius_km}` ablesen (z.B. `c203l3491r5`).
+
+Ältere Konfigurationen mit `city_id` + `min_price`/`max_price`/`keywords` werden weiterhin unterstützt (Fallback), liefern aber ohne `location_id` oft ungenaue Ergebnisse.
+
+Der Crawler pausiert außerdem automatisch zwischen 22:00 und 06:00 Uhr (Nachtruhe) und variiert das Check-Intervall um ±30 %, um kein festes Abfragemuster zu erzeugen.
 
 ## Updates einspielen
 

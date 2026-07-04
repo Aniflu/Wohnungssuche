@@ -486,7 +486,7 @@ header {
       <h2>KONFIGURATION</h2>
       <div class="config-info">
         Nach dem Speichern Crawler neu starten:<br>
-        <code>sudo systemctl restart wohnungsmonitor-crawler</code>
+        <code>docker compose restart</code>
       </div>
       <textarea id="config-json" spellcheck="false"></textarea>
       <div style="margin-top:10px">
@@ -781,7 +781,7 @@ async function showDesktopTab(name, render = true) {
       <div style="padding:20px">
         <div class="config-info" style="margin-bottom:12px">
           Nach dem Speichern Crawler neu starten:<br>
-          <code>sudo systemctl restart wohnungsmonitor-crawler</code>
+          <code>docker compose restart</code>
         </div>
         <textarea id="config-json" spellcheck="false" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:14px;color:var(--text);font-size:12px;font-family:'DM Mono',monospace;line-height:1.7;outline:none;min-height:400px;resize:vertical">${JSON.stringify(cfg, null, 2)}</textarea>
         <div style="margin-top:12px">
