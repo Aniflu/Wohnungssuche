@@ -1,5 +1,8 @@
 FROM python:3.12-slim
 
+# Python-Output sofort ausgeben (nicht puffern) - wichtig für "docker compose logs -f"
+ENV PYTHONUNBUFFERED=1
+
 # Arbeitsverzeichnis
 WORKDIR /app
 
