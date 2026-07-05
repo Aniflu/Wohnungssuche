@@ -11,17 +11,18 @@ import os
 import random
 import re
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import requests
 from bs4 import BeautifulSoup
 
 # ── Pfade ─────────────────────────────────────────────────────────────────────
-DATA_DIR      = Path(os.environ.get("DATA_DIR", "/data"))
-CONFIG_FILE   = DATA_DIR / "config.json"
-LISTINGS_FILE = DATA_DIR / "listings.json"
-LOG_FILE      = DATA_DIR / "crawler.log"
+DATA_DIR       = Path(os.environ.get("DATA_DIR", "/data"))
+CONFIG_FILE    = DATA_DIR / "config.json"
+LISTINGS_FILE  = DATA_DIR / "listings.json"
+LOG_FILE       = DATA_DIR / "crawler.log"
+HOUSEKEEPING_STATE_FILE = DATA_DIR / "housekeeping_state.json"
 
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -42,7 +43,8 @@ DEFAULT_CONFIG = {
     ],
     "check_interval_seconds": 300,
     "max_listings_stored": 500,
-    "user_agent": "Mozilla/5.0 (X11; Linux x86_64; rv:125.0) Gecko/20100101 Firefox/125.0"
+    "user_agent": "Mozilla/5.0 (X11; Linux x86_64; rv:125.0) Gecko/20100101 Firefox/125.0",
+    "housekeeping_hour": 2
 }
 
 # ── Logging ───────────────────────────────────────────────────────────────────
@@ -75,6 +77,19 @@ def load_listings() -> list:
 
 def save_listings(listings: list):
     LISTINGS_FILE.write_text(json.dumps(listings, indent=2, ensure_ascii=False))
+
+
+def load_housekeeping_state() -> dict:
+    if HOUSEKEEPING_STATE_FILE.exists():
+        try:
+            return json.loads(HOUSEKEEPING_STATE_FILE.read_text())
+        except json.JSONDecodeError:
+            return {}
+    return {}
+
+
+def save_housekeeping_state(state: dict):
+    HOUSEKEEPING_STATE_FILE.write_text(json.dumps(state, indent=2, ensure_ascii=False))
 
 
 def build_url(search: dict) -> str:
@@ -250,15 +265,104 @@ def merge_listings(existing: list, fresh: list, max_store: int) -> tuple[list, i
     return existing, new_count
 
 
-def sleep_until(hour: int, minute: int = 0):
-    """Schläft bis zur nächsten Uhrzeit (heute oder morgen)."""
+def check_listing_alive(url: str, session: requests.Session) -> str:
+    """Prüft, ob eine Kleinanzeigen-Anzeige noch aktiv ist.
+
+    Rückgabe: "alive", "gone" oder "unknown" (bei Netzwerkfehlern –
+    wird nie als gelöscht gewertet, um Fehlalarme durch temporäre
+    Verbindungsprobleme auszuschließen).
+
+    Erkennung: aktive Anzeigen laden direkt (ohne Redirect) und enthalten
+    `window.pageType = 'VIP'`. Gelöschte/abgelaufene/deaktivierte Anzeigen
+    leiten Kleinanzeigen.de dagegen automatisch auf eine Kategorie- oder
+    Startseite um (pageType 'ResultsBrowse'/'Homepage', kein VIP) – das
+    ist ein stabileres Signal als deutsche Textphrasen, die je nach
+    A/B-Test oder Redesign wechseln können.
+    """
+    headers = {
+        "User-Agent": "Mozilla/5.0 (X11; Linux x86_64; rv:125.0) Gecko/20100101 Firefox/125.0",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "de,en-US;q=0.7,en;q=0.3",
+        "DNT": "1",
+        "Connection": "keep-alive",
+    }
+    try:
+        resp = session.get(url, headers=headers, timeout=20, allow_redirects=True)
+    except requests.exceptions.RequestException as e:
+        log.debug(f"[Housekeeping] Unklar (Netzwerkfehler) bei {url}: {e}")
+        return "unknown"
+
+    if resp.status_code == 404:
+        return "gone"
+    if resp.status_code != 200:
+        log.debug(f"[Housekeeping] Unklar (HTTP {resp.status_code}) bei {url}")
+        return "unknown"
+
+    is_vip = "pagetype = 'vip'" in resp.text.lower() or 'pagetype = "vip"' in resp.text.lower()
+    if is_vip and not resp.history:
+        return "alive"
+    if resp.history and not is_vip:
+        return "gone"
+
+    log.debug(f"[Housekeeping] Unklar (kein eindeutiges Signal) bei {url}")
+    return "unknown"
+
+
+def run_housekeeping(listings: list, session: requests.Session) -> tuple[list, int, bool]:
+    """Prüft alle gespeicherten Anzeigen und entfernt endgültig gelöschte/
+    deaktivierte Einträge. Bricht sicherheitshalber ohne Löschung ab, wenn
+    auffällig viele Anzeigen als "gone" erkannt werden (z. B. bei einer
+    IP-Sperre oder Captcha-Seite, die pauschal wie "gelöscht" aussehen würde),
+    statt versehentlich fast die ganze Liste zu leeren.
+
+    Rückgabe: (verbleibende Anzeigen, Anzahl entfernt, ob abgebrochen wurde)
+    """
+    ABORT_THRESHOLD = 0.3
+    MIN_FOR_THRESHOLD = 5
+
+    kept = []
+    gone = []
+    for l in listings:
+        status = check_listing_alive(l.get("url", ""), session)
+        if status == "gone":
+            gone.append(l)
+        else:
+            kept.append(l)
+            if status == "unknown":
+                log.warning(f"[Housekeeping] Unklar, wird behalten: {l.get('id')} – {l.get('url')}")
+        time.sleep(3)
+
+    total = len(listings)
+    if total >= MIN_FOR_THRESHOLD and len(gone) / total > ABORT_THRESHOLD:
+        log.warning(
+            f"[Housekeeping] Abgebrochen: {len(gone)}/{total} Anzeigen als "
+            f"gelöscht erkannt – das ist ungewöhnlich viel (evtl. IP-Sperre "
+            f"oder Captcha). Es wird nichts gelöscht, nächster Versuch beim "
+            f"nächsten Zyklus."
+        )
+        return listings, 0, True
+
+    for l in gone:
+        log.info(f"[Housekeeping] Entfernt: {l.get('id')} – {l.get('title')} ({l.get('url')})")
+
+    return kept, len(gone), False
+
+
+def next_occurrence(hour: int, minute: int = 0) -> datetime:
+    """Nächster Zeitpunkt mit der angegebenen Uhrzeit (heute oder morgen)."""
     now = datetime.now()
     target = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
     if target <= now:
-        target = target.replace(day=target.day + 1)
-    secs = (target - now).total_seconds()
+        target += timedelta(days=1)
+    return target
+
+
+def sleep_until(hour: int, minute: int = 0):
+    """Schläft bis zur nächsten Uhrzeit (heute oder morgen)."""
+    target = next_occurrence(hour, minute)
+    secs = (target - datetime.now()).total_seconds()
     log.info(f"Nachtruhe – nächster Check um {target.strftime('%H:%M Uhr')} ({int(secs // 3600)}h {int((secs % 3600) // 60)}min)")
-    time.sleep(secs)
+    time.sleep(max(secs, 0))
 
 
 def is_quiet_hours(quiet_start: int = 22, quiet_end: int = 6) -> bool:
@@ -279,6 +383,34 @@ def run_crawler():
     while True:
         # Nachtruhe: zwischen 22 und 6 Uhr kein Crawling
         if is_quiet_hours(22, 6):
+            config = load_config()
+            hk_hour = config.get("housekeeping_hour", 2)
+
+            if hk_hour >= 22 or hk_hour < 6:
+                hk_target = next_occurrence(hk_hour)
+                hk_date   = hk_target.strftime("%Y-%m-%d")
+                hk_state  = load_housekeeping_state()
+
+                if hk_state.get("last_run_date") != hk_date:
+                    wait = (hk_target - datetime.now()).total_seconds()
+                    if wait > 0:
+                        log.info(f"Nachtruhe – Housekeeping um {hk_target.strftime('%H:%M Uhr')} ({int(wait // 3600)}h {int((wait % 3600) // 60)}min)")
+                        time.sleep(wait)
+
+                    log.info("─" * 50)
+                    log.info("  Housekeeping: prüfe gespeicherte Anzeigen auf Löschung/Deaktivierung")
+                    log.info("─" * 50)
+
+                    listings = load_listings()
+                    listings, removed, aborted = run_housekeeping(listings, session)
+                    if not aborted:
+                        save_listings(listings)
+                        hk_state["last_run_date"] = hk_date
+                        save_housekeeping_state(hk_state)
+                    log.info(f"✓ Housekeeping: {removed} Anzeige(n) entfernt" if removed else "✓ Housekeeping: keine Änderungen")
+            else:
+                log.warning(f"housekeeping_hour={hk_hour} liegt außerhalb der Nachtruhe (22-6 Uhr) und wird ignoriert.")
+
             sleep_until(6)
             continue
 

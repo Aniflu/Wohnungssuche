@@ -43,7 +43,8 @@ Beim ersten Start wird automatisch `data/config.json` erstellt:
   ],
   "check_interval_seconds": 300,
   "max_listings_stored": 500,
-  "user_agent": "Mozilla/5.0 (X11; Linux x86_64; rv:125.0) Gecko/20100101 Firefox/125.0"
+  "user_agent": "Mozilla/5.0 (X11; Linux x86_64; rv:125.0) Gecko/20100101 Firefox/125.0",
+  "housekeeping_hour": 2
 }
 ```
 
@@ -70,6 +71,17 @@ docker compose restart
 Ältere Konfigurationen mit `city_id` + `min_price`/`max_price`/`keywords` werden weiterhin unterstützt (Fallback), liefern aber ohne `location_id` oft ungenaue Ergebnisse.
 
 Der Crawler pausiert außerdem automatisch zwischen 22:00 und 06:00 Uhr (Nachtruhe) und variiert das Check-Intervall um ±30 %, um kein festes Abfragemuster zu erzeugen.
+
+### Housekeeping (nächtliche Aufräum-Prüfung)
+
+Einmal pro Nacht, zur in `housekeeping_hour` konfigurierten Stunde (Standard: 2 Uhr,
+lokale Containerzeit), prüft der Crawler innerhalb der Nachtruhe jede gespeicherte
+Anzeige einzeln darauf, ob sie auf kleinanzeigen.de inzwischen gelöscht, deaktiviert
+oder abgelaufen ist, und entfernt betroffene Einträge endgültig aus
+`data/listings.json`. `housekeeping_hour` muss innerhalb des Nachtruhe-Fensters
+(22–6 Uhr) liegen, sonst wird der Wert ignoriert (Warnung im Log). Ergebnisse
+(entfernte Anzeigen, evtl. Abbruch bei ungewöhnlich vielen Treffern – z. B. bei
+einer IP-Sperre) stehen in `data/crawler.log`.
 
 ## Updates einspielen
 
@@ -109,9 +121,10 @@ wohnungsmonitor/
 │   └── templates/
 │       └── index.html    # Dashboard UI (Mobile + Desktop)
 ├── data/                 # Laufzeit-Daten (nicht im Git)
-│   ├── config.json       # Konfiguration
-│   ├── listings.json     # Gefundene Inserate
-│   └── crawler.log       # Log-Datei
+│   ├── config.json               # Konfiguration
+│   ├── listings.json             # Gefundene Inserate
+│   ├── housekeeping_state.json   # Merkt sich den letzten Housekeeping-Lauf
+│   └── crawler.log               # Log-Datei
 ├── Dockerfile
 ├── docker-compose.yml
 ├── docker-entrypoint.sh
