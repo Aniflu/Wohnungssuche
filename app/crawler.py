@@ -204,7 +204,7 @@ def parse_listings(html: str, search_name: str) -> list:
     return results
 
 
-def fetch_search(search: dict, session: requests.Session) -> list:
+def fetch_search(search: dict) -> list:
     url = build_url(search)
     log.info(f"[{search['name']}] Abrufe URL: {url}")
 
@@ -219,7 +219,14 @@ def fetch_search(search: dict, session: requests.Session) -> list:
     }
 
     try:
-        resp = session.get(url, headers=headers, timeout=20)
+        # Bewusst eine frische Session pro Request: kleinanzeigen.de (Akamai
+        # Bot-Schutz) liefert bei einer wiederverwendeten Session ab dem
+        # zweiten Request zuverlässig 0 Treffer (200 OK, aber ohne Inserate),
+        # da das dabei gesetzte _abck-Cookie ohne echte Browser-JS-Ausführung
+        # als Bot markiert wird. Reproduziert: 3/3 frische Sessions liefern
+        # korrekte Ergebnisse, jede Zweitanfrage einer wiederverwendeten
+        # Session schlägt fehl.
+        resp = requests.get(url, headers=headers, timeout=20)
         resp.raise_for_status()
         listings = parse_listings(resp.text, search["name"])
 
@@ -265,7 +272,7 @@ def merge_listings(existing: list, fresh: list, max_store: int) -> tuple[list, i
     return existing, new_count
 
 
-def check_listing_alive(url: str, session: requests.Session) -> str:
+def check_listing_alive(url: str) -> str:
     """Prüft, ob eine Kleinanzeigen-Anzeige noch aktiv ist.
 
     Rückgabe: "alive", "gone" oder "unknown" (bei Netzwerkfehlern –
@@ -287,7 +294,8 @@ def check_listing_alive(url: str, session: requests.Session) -> str:
         "Connection": "keep-alive",
     }
     try:
-        resp = session.get(url, headers=headers, timeout=20, allow_redirects=True)
+        # Frische Session aus demselben Grund wie in fetch_search().
+        resp = requests.get(url, headers=headers, timeout=20, allow_redirects=True)
     except requests.exceptions.RequestException as e:
         log.debug(f"[Housekeeping] Unklar (Netzwerkfehler) bei {url}: {e}")
         return "unknown"
@@ -308,7 +316,7 @@ def check_listing_alive(url: str, session: requests.Session) -> str:
     return "unknown"
 
 
-def run_housekeeping(listings: list, session: requests.Session) -> tuple[list, int, bool]:
+def run_housekeeping(listings: list) -> tuple[list, int, bool]:
     """Prüft alle gespeicherten Anzeigen und entfernt endgültig gelöschte/
     deaktivierte Einträge. Bricht sicherheitshalber ohne Löschung ab, wenn
     auffällig viele Anzeigen als "gone" erkannt werden (z. B. bei einer
@@ -323,7 +331,7 @@ def run_housekeeping(listings: list, session: requests.Session) -> tuple[list, i
     kept = []
     gone = []
     for l in listings:
-        status = check_listing_alive(l.get("url", ""), session)
+        status = check_listing_alive(l.get("url", ""))
         if status == "gone":
             gone.append(l)
         else:
@@ -378,8 +386,6 @@ def run_crawler():
     log.info("  Wohnungsmonitor gestartet")
     log.info("═" * 50)
 
-    session = requests.Session()
-
     while True:
         # Nachtruhe: zwischen 22 und 6 Uhr kein Crawling
         if is_quiet_hours(22, 6):
@@ -402,7 +408,7 @@ def run_crawler():
                     log.info("─" * 50)
 
                     listings = load_listings()
-                    listings, removed, aborted = run_housekeeping(listings, session)
+                    listings, removed, aborted = run_housekeeping(listings)
                     if not aborted:
                         save_listings(listings)
                         hk_state["last_run_date"] = hk_date
@@ -419,7 +425,7 @@ def run_crawler():
 
         total_new = 0
         for search in config.get("searches", []):
-            fresh = fetch_search(search, session)
+            fresh = fetch_search(search)
             listings, new_count = merge_listings(
                 listings, fresh, config.get("max_listings_stored", 500)
             )
