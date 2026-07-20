@@ -65,6 +65,7 @@ docker compose restart
 | `min_rooms` / `max_rooms` | int | Zimmeranzahl-Bereich |
 | `no_swap` | bool | `true` = keine Tauschwohnungen |
 | `max_distance_km` | int | Post-Filter: nur Inserate ≤ X km (aus dem Location-Text extrahiert) |
+| `exclude_keywords` | string[] | Post-Filter: Inserate mit einem dieser Begriffe (Titel/Beschreibung, Groß-/Kleinschreibung egal) werden verworfen. Default: `wg-zimmer`, `wg zimmer`, `in wg`, `zwischenmiete`, `untermiete`, `befristet`, `befristung` – Kleinanzeigens Zimmer-/Tausch-Filter schließt WG-Zimmer und Zwischenmiete/Untermiete nicht zuverlässig aus, da sie zur selben Kategorie zählen und die Zimmerzahl der Gesamtwohnung angeben. Leere Liste `[]` deaktiviert den Filter. |
 
 **`postal_code` + `location_id` ermitteln:** Auf kleinanzeigen.de → Wohnungen mieten → Ort/PLZ eingeben → Filter setzen. Aus der Browser-URL `c{category_id}l{location_id}r{radius_km}` ablesen (z.B. `c203l3491r5`).
 

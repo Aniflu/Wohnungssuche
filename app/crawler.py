@@ -47,6 +47,16 @@ DEFAULT_CONFIG = {
     "housekeeping_hour": 2
 }
 
+# Kleinanzeigen filtert Zimmeranzahl/Tausch nur lose: WG-Zimmer (Vermietung
+# nur eines Raums) und Zwischenmiete/Untermiete (befristete Vermietung)
+# tauchen trotzdem in den Ergebnissen auf, weil sie zur Kategorie
+# "Wohnung mieten" gehören und die Zimmerzahl der Gesamtwohnung angeben.
+# Wird daher zusätzlich per Stichwort auf Titel+Beschreibung gefiltert.
+DEFAULT_EXCLUDE_KEYWORDS = [
+    "wg-zimmer", "wg zimmer", "in wg",
+    "zwischenmiete", "untermiete", "befristet", "befristung",
+]
+
 # ── Logging ───────────────────────────────────────────────────────────────────
 logging.basicConfig(
     level=logging.INFO,
@@ -229,6 +239,17 @@ def fetch_search(search: dict) -> list:
         resp = requests.get(url, headers=headers, timeout=20)
         resp.raise_for_status()
         listings = parse_listings(resp.text, search["name"])
+
+        exclude_keywords = search.get("exclude_keywords", DEFAULT_EXCLUDE_KEYWORDS)
+        if exclude_keywords:
+            before = len(listings)
+
+            def is_excluded(l: dict) -> bool:
+                text = f"{l.get('title', '')} {l.get('description', '')}".lower()
+                return any(kw.lower() in text for kw in exclude_keywords)
+
+            listings = [l for l in listings if not is_excluded(l)]
+            log.info(f"[{search['name']}] {len(listings)}/{before} Inserate nach Stichwort-Filter (WG/Zwischenmiete)")
 
         max_km = search.get("max_distance_km")
         if max_km is not None:
