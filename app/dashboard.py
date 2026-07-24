@@ -14,6 +14,7 @@ from flask import Flask, jsonify, render_template, request
 DATA_DIR      = Path(os.environ.get("DATA_DIR", "/data"))
 LISTINGS_FILE = DATA_DIR / "listings.json"
 CONFIG_FILE   = DATA_DIR / "config.json"
+GEWOBAG_CONFIG_FILE = DATA_DIR / "gewobag_config.json"
 LOG_FILE      = DATA_DIR / "crawler.log"
 
 HOWOGE_LISTINGS_FILE = DATA_DIR / "howoge_listings.json"
@@ -103,10 +104,17 @@ def mark_seen():
     return jsonify({"ok": True})
 
 
+CONFIG_FILES_BY_SOURCE = {
+    "kleinanzeigen": CONFIG_FILE,
+    "gewobag": GEWOBAG_CONFIG_FILE,
+    "howoge": HOWOGE_CONFIG_FILE,
+}
+
+
 @app.route("/api/config", methods=["GET", "POST"])
 def api_config():
     source = request.args.get("source", "kleinanzeigen")
-    cfg_file = HOWOGE_CONFIG_FILE if source == "howoge" else CONFIG_FILE
+    cfg_file = CONFIG_FILES_BY_SOURCE.get(source, CONFIG_FILE)
 
     if request.method == "GET":
         if cfg_file.exists():

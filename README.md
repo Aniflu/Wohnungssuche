@@ -66,7 +66,7 @@ docker compose restart
 | `no_swap` | bool | `true` = keine Tauschwohnungen |
 | `max_distance_km` | int | Post-Filter: nur Inserate ≤ X km (aus dem Location-Text extrahiert) |
 | `exclude_keywords` | string[] | Post-Filter: Inserate mit einem dieser Begriffe (Titel/Beschreibung, Groß-/Kleinschreibung egal) werden verworfen. Default: `wg-zimmer`, `wg zimmer`, `in wg`, `zwischenmiete`, `untermiete`, `befristet`, `befristung` – Kleinanzeigens Zimmer-/Tausch-Filter schließt WG-Zimmer und Zwischenmiete/Untermiete nicht zuverlässig aus, da sie zur selben Kategorie zählen und die Zimmerzahl der Gesamtwohnung angeben. Leere Liste `[]` deaktiviert den Filter. |
-| `source` | string | `"kleinanzeigen"` (Default, auch wenn das Feld fehlt) oder `"gewobag"`. Bestimmt, welche Abruf-/Parse-Logik für diese Suche verwendet wird. |
+| `source` | string | Legacy-Feld, nur für ältere Configs relevant: `"gewobag"` innerhalb von `config.json` wurde früher genutzt, um eine Suche an die Gewobag-Logik statt Kleinanzeigen zu schicken. Neue Gewobag-Suchen gehören in `data/gewobag_config.json` (siehe unten) und brauchen dieses Feld nicht mehr. |
 
 **`postal_code` + `location_id` ermitteln:** Auf kleinanzeigen.de → Wohnungen mieten → Ort/PLZ eingeben → Filter setzen. Aus der Browser-URL `c{category_id}l{location_id}r{radius_km}` ablesen (z.B. `c203l3491r5`).
 
@@ -74,9 +74,11 @@ docker compose restart
 
 Der Crawler pausiert außerdem automatisch zwischen 22:00 und 06:00 Uhr (Nachtruhe) und variiert das Check-Intervall um ±30 %, um kein festes Abfragemuster zu erzeugen.
 
-### Gewobag hinzufügen
+### Gewobag konfigurieren
 
-Gewobag-Suchen haben ein eigenes, bezirksbasiertes Feld-Set statt der Kleinanzeigen-Felder oben:
+Gewobag hat eine eigene Konfigurationsdatei, `data/gewobag_config.json` (analog zu HOWOGE, siehe unten), und einen eigenen Tab im Dashboard-Konfigurationsbereich. Sie wird beim ersten Start automatisch mit einem Beispiel-Suchauftrag angelegt und läuft weiterhin im selben Crawler-Prozess wie Kleinanzeigen (teilt sich `check_interval_seconds`, `max_listings_stored` und `housekeeping_hour` mit `config.json`).
+
+Feld-Set pro Suche (bezirksbasiert statt radius-basiert wie bei Kleinanzeigen):
 
 | Feld | Typ | Beschreibung |
 |---|---|---|
@@ -85,22 +87,25 @@ Gewobag-Suchen haben ein eigenes, bezirksbasiertes Feld-Set statt der Kleinanzei
 | `gesamtmiete_von` / `gesamtmiete_bis` | int | Gesamtmiete-Bereich (€) |
 | `gesamtflaeche_von` / `gesamtflaeche_bis` | int | Wohnfläche-Bereich (m²) |
 | `objekttyp` | string[] | Default `["wohnung"]` |
-| `exclude_keywords` | string[] | Wie oben, Default hier `[]` (Gewobags "Wohnung"-Kategorie ist bereits kuratiert) |
+| `exclude_keywords` | string[] | Wie bei Kleinanzeigen, Default hier `[]` (Gewobags "Wohnung"-Kategorie ist bereits kuratiert) |
 
-Beispiel-Eintrag für `data/config.json` (über den Config-Editor im Dashboard einfügbar):
+Beispiel-Inhalt von `data/gewobag_config.json` (über den "GEWOBAG"-Tab im Dashboard editierbar):
 
 ```json
 {
-  "name": "Gewobag – Friedrichshain/Pankow",
-  "source": "gewobag",
-  "bezirke": [
-    "friedrichshain-kreuzberg-friedrichshain",
-    "pankow",
-    "pankow-prenzlauer-berg",
-    "pankow-rosenthal",
-    "pankow-weissensee"
-  ],
-  "zimmer_von": 3
+  "searches": [
+    {
+      "name": "Gewobag – Friedrichshain/Pankow",
+      "bezirke": [
+        "friedrichshain-kreuzberg-friedrichshain",
+        "pankow",
+        "pankow-prenzlauer-berg",
+        "pankow-rosenthal",
+        "pankow-weissensee"
+      ],
+      "zimmer_von": 3
+    }
+  ]
 }
 ```
 
@@ -150,13 +155,15 @@ docker compose up -d --build --force-recreate
 ```
 wohnungsmonitor/
 ├── app/
-│   ├── crawler.py        # Crawler-Logik
+│   ├── crawler.py        # Kleinanzeigen-Crawler-Logik + Gewobag-Dispatch
+│   ├── gewobag.py        # Gewobag-spezifische Fetch-/Parse-/Alive-Check-Logik
 │   ├── dashboard.py      # Flask Web-Server
 │   └── templates/
 │       └── index.html    # Dashboard UI (Mobile + Desktop)
 ├── data/                 # Laufzeit-Daten (nicht im Git)
-│   ├── config.json               # Konfiguration
-│   ├── listings.json             # Gefundene Inserate
+│   ├── config.json               # Kleinanzeigen-Konfiguration
+│   ├── gewobag_config.json       # Gewobag-Konfiguration
+│   ├── listings.json             # Gefundene Kleinanzeigen-/Gewobag-Inserate
 │   ├── housekeeping_state.json   # Merkt sich den letzten Housekeeping-Lauf
 │   └── crawler.log               # Log-Datei
 ├── Dockerfile

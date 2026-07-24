@@ -240,13 +240,13 @@ header {
   background: var(--surface2); border-radius: 10px; padding: 12px;
 }
 .config-info code { color: var(--accent2); font-size: 11px; }
-#config-json, #config-json-howoge {
+#config-json, #config-json-gewobag, #config-json-howoge {
   width: 100%; background: var(--bg); border: 1px solid var(--border);
   border-radius: 10px; padding: 12px; color: var(--text);
   font-size: 11px; font-family: 'DM Mono', monospace; line-height: 1.7;
   outline: none; min-height: 320px; resize: vertical;
 }
-#config-json:focus, #config-json-howoge:focus { border-color: var(--accent); }
+#config-json:focus, #config-json-gewobag:focus, #config-json-howoge:focus { border-color: var(--accent); }
 
 /* ── Log screen ──────────────────────────────────────── */
 .log-screen { padding: 12px 12px 20px; }
@@ -495,6 +495,14 @@ header {
         </button>
       </div>
 
+      <h2 style="margin-top:24px">KONFIGURATION – GEWOBAG</h2>
+      <textarea id="config-json-gewobag" spellcheck="false"></textarea>
+      <div style="margin-top:10px">
+        <button class="action-btn primary" onclick="saveConfig('gewobag')">
+          <span class="action-icon">💾</span> Speichern
+        </button>
+      </div>
+
       <h2 style="margin-top:24px">KONFIGURATION – HOWOGE</h2>
       <textarea id="config-json-howoge" spellcheck="false"></textarea>
       <div style="margin-top:10px">
@@ -670,6 +678,8 @@ function renderListings() {
   }
 }
 
+const SOURCE_LABELS = { kleinanzeigen: 'Kleinanzeigen', gewobag: 'Gewobag', howoge: 'HOWOGE' };
+
 function cardHTML(l) {
   const time = l.found_at ? new Date(l.found_at).toLocaleString('de-DE') : '';
   const titleContent = l.url
@@ -685,7 +695,7 @@ function cardHTML(l) {
     ${l.location ? `<div class="card-meta"><span>📍 ${esc(l.location)}</span></div>` : ''}
     ${l.description ? `<div class="card-desc">${esc(l.description)}</div>` : ''}
     <div class="card-footer">
-      <span class="card-tag">${esc(l.search_name || '')} · ${l.source === 'howoge' ? 'HOWOGE' : 'Kleinanzeigen'}</span>
+      <span class="card-tag">${esc(l.search_name || '')} · ${SOURCE_LABELS[l.source] || 'Kleinanzeigen'}</span>
       <div class="card-actions">
         <span class="card-time">${time}</span>
         <button class="del-btn" onclick="deleteListing('${esc(l.id)}')" title="Entfernen">✕</button>
@@ -713,18 +723,20 @@ async function deleteListing(id) {
 }
 
 // ── Config ─────────────────────────────────────────────
+function configElId(source) {
+  return source === 'kleinanzeigen' ? 'config-json' : 'config-json-' + source;
+}
+
 async function loadConfig(source = 'kleinanzeigen') {
   const r = await fetch('/api/config?source=' + source);
   const cfg = await r.json();
-  const elId = source === 'howoge' ? 'config-json-howoge' : 'config-json';
-  const el = document.getElementById(elId);
+  const el = document.getElementById(configElId(source));
   if (el) el.value = JSON.stringify(cfg, null, 2);
 }
 
 async function saveConfig(source = 'kleinanzeigen') {
   try {
-    const elId = source === 'howoge' ? 'config-json-howoge' : 'config-json';
-    const val = document.getElementById(elId).value;
+    const val = document.getElementById(configElId(source)).value;
     const cfg = JSON.parse(val);
     await fetch('/api/config?source=' + source, {
       method: 'POST',
@@ -760,7 +772,7 @@ function showScreen(name) {
     document.getElementById('screen-' + s).classList.toggle('active', s === name);
     document.getElementById('nav-' + s).classList.toggle('active', s === name);
   });
-  if (name === 'config') { loadConfig('kleinanzeigen'); loadConfig('howoge'); }
+  if (name === 'config') { loadConfig('kleinanzeigen'); loadConfig('gewobag'); loadConfig('howoge'); }
   if (name === 'log')    loadLog();
 }
 
@@ -787,6 +799,8 @@ async function showDesktopTab(name, render = true) {
   } else if (name === 'config') {
     const r = await fetch('/api/config');
     const cfg = await r.json();
+    const rg = await fetch('/api/config?source=gewobag');
+    const cfgGewobag = await rg.json();
     const rh = await fetch('/api/config?source=howoge');
     const cfgHowoge = await rh.json();
     dc.innerHTML = `
@@ -799,6 +813,11 @@ async function showDesktopTab(name, render = true) {
         <textarea id="config-json" spellcheck="false" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:14px;color:var(--text);font-size:12px;font-family:'DM Mono',monospace;line-height:1.7;outline:none;min-height:300px;resize:vertical">${JSON.stringify(cfg, null, 2)}</textarea>
         <div style="margin-top:12px">
           <button class="action-btn primary" onclick="saveConfig('kleinanzeigen')" style="max-width:200px">💾 Speichern</button>
+        </div>
+        <h2 style="font-size:11px;letter-spacing:0.1em;color:var(--muted);margin:20px 0 6px">GEWOBAG</h2>
+        <textarea id="config-json-gewobag" spellcheck="false" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:14px;color:var(--text);font-size:12px;font-family:'DM Mono',monospace;line-height:1.7;outline:none;min-height:300px;resize:vertical">${JSON.stringify(cfgGewobag, null, 2)}</textarea>
+        <div style="margin-top:12px">
+          <button class="action-btn primary" onclick="saveConfig('gewobag')" style="max-width:200px">💾 Speichern</button>
         </div>
         <h2 style="font-size:11px;letter-spacing:0.1em;color:var(--muted);margin:20px 0 6px">HOWOGE</h2>
         <textarea id="config-json-howoge" spellcheck="false" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:14px;color:var(--text);font-size:12px;font-family:'DM Mono',monospace;line-height:1.7;outline:none;min-height:300px;resize:vertical">${JSON.stringify(cfgHowoge, null, 2)}</textarea>

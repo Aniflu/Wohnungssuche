@@ -22,6 +22,7 @@ from gewobag import check_gewobag_alive, fetch_gewobag_search
 # ── Pfade ─────────────────────────────────────────────────────────────────────
 DATA_DIR       = Path(os.environ.get("DATA_DIR", "/data"))
 CONFIG_FILE    = DATA_DIR / "config.json"
+GEWOBAG_CONFIG_FILE = DATA_DIR / "gewobag_config.json"
 LISTINGS_FILE  = DATA_DIR / "listings.json"
 LOG_FILE       = DATA_DIR / "crawler.log"
 HOUSEKEEPING_STATE_FILE = DATA_DIR / "housekeeping_state.json"
@@ -47,6 +48,25 @@ DEFAULT_CONFIG = {
     "max_listings_stored": 500,
     "user_agent": "Mozilla/5.0 (X11; Linux x86_64; rv:125.0) Gecko/20100101 Firefox/125.0",
     "housekeeping_hour": 2
+}
+
+# Eigene Config-Datei für Gewobag (analog zu HOWOGEs howoge_config.json) –
+# eigener Tab im Dashboard, aber weiterhin derselbe Crawler-Prozess/dieselbe
+# listings.json wie Kleinanzeigen (siehe CLAUDE.md "Multi-source dispatch").
+DEFAULT_GEWOBAG_CONFIG = {
+    "searches": [
+        {
+            "name": "Gewobag – Friedrichshain/Pankow",
+            "bezirke": [
+                "friedrichshain-kreuzberg-friedrichshain",
+                "pankow",
+                "pankow-prenzlauer-berg",
+                "pankow-rosenthal",
+                "pankow-weissensee"
+            ],
+            "zimmer_von": 3
+        }
+    ]
 }
 
 # Kleinanzeigen filtert Zimmeranzahl/Tausch nur lose: WG-Zimmer (Vermietung
@@ -76,6 +96,13 @@ def load_config() -> dict:
         CONFIG_FILE.write_text(json.dumps(DEFAULT_CONFIG, indent=2, ensure_ascii=False))
         log.info(f"Standardkonfiguration erstellt: {CONFIG_FILE}")
     return json.loads(CONFIG_FILE.read_text())
+
+
+def load_gewobag_config() -> dict:
+    if not GEWOBAG_CONFIG_FILE.exists():
+        GEWOBAG_CONFIG_FILE.write_text(json.dumps(DEFAULT_GEWOBAG_CONFIG, indent=2, ensure_ascii=False))
+        log.info(f"Gewobag-Standardkonfiguration erstellt: {GEWOBAG_CONFIG_FILE}")
+    return json.loads(GEWOBAG_CONFIG_FILE.read_text())
 
 
 def load_listings() -> list:
@@ -448,7 +475,9 @@ def run_crawler():
             continue
 
         config = load_config()
+        gewobag_config = load_gewobag_config()
         listings = load_listings()
+        max_stored = config.get("max_listings_stored", 500)
 
         total_new = 0
         for search in config.get("searches", []):
@@ -456,11 +485,15 @@ def run_crawler():
                 fresh = fetch_gewobag_search(search)
             else:
                 fresh = fetch_search(search)
-            listings, new_count = merge_listings(
-                listings, fresh, config.get("max_listings_stored", 500)
-            )
+            listings, new_count = merge_listings(listings, fresh, max_stored)
             total_new += new_count
             time.sleep(random.uniform(2, 6))  # zufällige Pause zwischen Suchen
+
+        for search in gewobag_config.get("searches", []):
+            fresh = fetch_gewobag_search(search)
+            listings, new_count = merge_listings(listings, fresh, max_stored)
+            total_new += new_count
+            time.sleep(random.uniform(2, 6))
 
         save_listings(listings)
 
