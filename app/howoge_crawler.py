@@ -79,6 +79,8 @@ def fetch_immo_objects(kiez: list, wbs: str) -> list:
     gar nicht erst mitgeschickt.
     """
     params = {
+        # type=999 is HOWOGE's TYPO3 eID/ajax dispatch parameter – it's what
+        # makes this endpoint return JSON instead of the full HTML page.
         "type": "999",
         "tx_howrealestate_json_list[action]": "immoList",
     }
@@ -97,6 +99,10 @@ def fetch_immo_objects(kiez: list, wbs: str) -> list:
     return resp.json().get("immoobjects", [])
 
 
+def _absolutize(path: str) -> str:
+    return f"https://www.howoge.de{path}" if path.startswith("/") else path
+
+
 def parse_immo_objects(raw_objects: list, search: dict) -> list:
     """Wandelt rohe immoList-Objekte in unser Listing-Schema um und filtert
     nach Zimmerzahl (min_rooms/max_rooms), da die HOWOGE-API dafür nur exakte
@@ -107,8 +113,18 @@ def parse_immo_objects(raw_objects: list, search: dict) -> list:
     results = []
 
     for obj in raw_objects:
+        uid = obj.get("uid")
+        if uid is None:
+            continue
+
         rooms = obj.get("rooms")
-        if rooms is None or not (min_rooms <= rooms <= max_rooms):
+        if rooms is None:
+            continue
+        try:
+            rooms = float(rooms)
+        except (TypeError, ValueError):
+            continue
+        if not (min_rooms <= rooms <= max_rooms):
             continue
 
         features = ", ".join(obj.get("features", []))
@@ -117,11 +133,11 @@ def parse_immo_objects(raw_objects: list, search: dict) -> list:
 
         link = obj.get("link", "")
         image = obj.get("image", "")
-        url = f"https://www.howoge.de{link}" if link.startswith("/") else link
-        img = f"https://www.howoge.de{image}" if image.startswith("/") else image
+        url = _absolutize(link)
+        img = _absolutize(image)
 
         results.append({
-            "id": f"howoge-{obj['uid']}",
+            "id": f"howoge-{uid}",
             "title": obj.get("title", "–"),
             "price": f"{obj.get('rent', '')} €".strip(),
             "location": obj.get("district", ""),
@@ -148,8 +164,8 @@ def fetch_search(search: dict) -> list:
         log.warning(f"[{name}] HTTP-Fehler: {e}")
     except requests.exceptions.ConnectionError:
         log.warning(f"[{name}] Verbindungsfehler – kein Internet?")
-    except Exception as e:
-        log.error(f"[{name}] Unerwarteter Fehler: {e}")
+    except Exception:
+        log.exception(f"[{name}] Unerwarteter Fehler")
     return []
 
 
@@ -184,8 +200,8 @@ def fetch_all_active_ids() -> set | None:
     except requests.exceptions.RequestException as e:
         log.warning(f"[Housekeeping] Verbindungsfehler: {e}")
         return None
-    except Exception as e:
-        log.warning(f"[Housekeeping] Fehler: {e}")
+    except Exception:
+        log.exception("[Housekeeping] Unerwarteter Fehler")
         return None
 
 
@@ -266,7 +282,7 @@ def run_crawler():
         active_ids = fetch_all_active_ids()
         removed = 0
         if active_ids is not None:
-            listings, removed, aborted = run_housekeeping(listings, active_ids)
+            listings, removed, _ = run_housekeeping(listings, active_ids)
 
         save_listings(listings)
 
