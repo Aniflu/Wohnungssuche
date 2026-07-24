@@ -137,5 +137,21 @@ def parse_immo_objects(raw_objects: list, search: dict) -> list:
     return results
 
 
+def fetch_search(search: dict) -> list:
+    name = search.get("name", "?")
+    try:
+        raw = fetch_immo_objects(search.get("kiez", []), search.get("wbs", ""))
+        listings = parse_immo_objects(raw, search)
+        log.info(f"[{name}] {len(listings)} Inserate gefunden")
+        return listings
+    except requests.exceptions.HTTPError as e:
+        log.warning(f"[{name}] HTTP-Fehler: {e}")
+    except requests.exceptions.ConnectionError:
+        log.warning(f"[{name}] Verbindungsfehler – kein Internet?")
+    except Exception as e:
+        log.error(f"[{name}] Unerwarteter Fehler: {e}")
+    return []
+
+
 if __name__ == "__main__":
     pass
