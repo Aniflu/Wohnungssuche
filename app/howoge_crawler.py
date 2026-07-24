@@ -218,5 +218,71 @@ def run_housekeeping(listings: list, active_ids: set) -> tuple[list, int, bool]:
     return kept, len(gone), False
 
 
+def next_occurrence(hour: int, minute: int = 0) -> datetime:
+    """Nächster Zeitpunkt mit der angegebenen Uhrzeit (heute oder morgen)."""
+    now = datetime.now()
+    target = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+    if target <= now:
+        target += timedelta(days=1)
+    return target
+
+
+def sleep_until(hour: int, minute: int = 0):
+    """Schläft bis zur nächsten Uhrzeit (heute oder morgen)."""
+    target = next_occurrence(hour, minute)
+    secs = (target - datetime.now()).total_seconds()
+    log.info(f"Nachtruhe – nächster Check um {target.strftime('%H:%M Uhr')} ({int(secs // 3600)}h {int((secs % 3600) // 60)}min)")
+    time.sleep(max(secs, 0))
+
+
+def is_quiet_hours(quiet_start: int = 22, quiet_end: int = 6) -> bool:
+    """True wenn aktuelle Stunde in der Ruhephase liegt."""
+    h = datetime.now().hour
+    if quiet_start > quiet_end:
+        return h >= quiet_start or h < quiet_end
+    return quiet_start <= h < quiet_end
+
+
+def run_crawler():
+    log.info("═" * 50)
+    log.info("  HOWOGE-Crawler gestartet")
+    log.info("═" * 50)
+
+    while True:
+        if is_quiet_hours(22, 6):
+            sleep_until(6)
+            continue
+
+        config = load_config()
+        listings = load_listings()
+
+        total_new = 0
+        for search in config.get("searches", []):
+            fresh = fetch_search(search)
+            listings, new_count = merge_listings(listings, fresh)
+            total_new += new_count
+            time.sleep(random.uniform(2, 6))
+
+        active_ids = fetch_all_active_ids()
+        removed = 0
+        if active_ids is not None:
+            listings, removed, aborted = run_housekeeping(listings, active_ids)
+
+        save_listings(listings)
+
+        if total_new > 0:
+            log.info(f"✓ {total_new} neue HOWOGE-Inserate gespeichert!")
+        else:
+            log.info("✓ Keine neuen HOWOGE-Inserate.")
+        if removed:
+            log.info(f"✓ Housekeeping: {removed} Anzeige(n) entfernt")
+
+        base = config.get("check_interval_seconds", 300)
+        jitter = random.uniform(-0.3, 0.3)
+        interval = int(base * (1 + jitter))
+        log.info(f"Nächster Check in {interval // 60}m {interval % 60}s...")
+        time.sleep(interval)
+
+
 if __name__ == "__main__":
-    pass
+    run_crawler()
