@@ -48,12 +48,6 @@ def load_all_listings() -> list:
     return listings + load_howoge_listings()
 
 
-def load_config() -> dict:
-    if CONFIG_FILE.exists():
-        return json.loads(CONFIG_FILE.read_text())
-    return {}
-
-
 @app.route("/")
 def index():
     return render_template("index.html")
@@ -109,17 +103,25 @@ def mark_seen():
 
 @app.route("/api/config", methods=["GET", "POST"])
 def api_config():
+    source = request.args.get("source", "kleinanzeigen")
+    cfg_file = HOWOGE_CONFIG_FILE if source == "howoge" else CONFIG_FILE
+
     if request.method == "GET":
-        return jsonify(load_config())
+        if cfg_file.exists():
+            return jsonify(json.loads(cfg_file.read_text()))
+        return jsonify({})
     cfg = request.get_json()
-    CONFIG_FILE.write_text(json.dumps(cfg, indent=2, ensure_ascii=False))
+    cfg_file.write_text(json.dumps(cfg, indent=2, ensure_ascii=False))
     return jsonify({"ok": True})
 
 
 @app.route("/api/log")
 def api_log():
-    if LOG_FILE.exists():
-        lines = LOG_FILE.read_text().splitlines()[-200:]
+    source = request.args.get("source", "kleinanzeigen")
+    log_file = HOWOGE_LOG_FILE if source == "howoge" else LOG_FILE
+
+    if log_file.exists():
+        lines = log_file.read_text().splitlines()[-200:]
         return jsonify(lines[::-1])
     return jsonify([])
 
