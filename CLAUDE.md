@@ -4,15 +4,24 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-Wohnungsmonitor: an apartment-listing crawler (kleinanzeigen.de + gewobag.de) with a Flask web dashboard, meant to run as a single Docker container on a home server. No test suite, no build step, no linter configured.
+Wohnungsmonitor: an apartment-listing crawler (kleinanzeigen.de + gewobag.de + howoge.de) with a Flask web dashboard, meant to run as a single Docker container on a home server. No test suite, no build step, no linter configured.
 
 ## Architecture
 
-Two long-running Python processes started by `docker-entrypoint.sh` inside one container, communicating only through JSON files on a shared volume (`/data`, mounted from `./data` via `docker-compose.yml`) — there is no database and no in-process communication between them:
+Three long-running Python processes started by `docker-entrypoint.sh` inside one container, communicating only through JSON files on a shared volume (`/data`, mounted from `./data` via `docker-compose.yml`) — there is no database and no in-process communication between them:
 
-- **`app/crawler.py`** — background loop (`run_crawler()`). Polls each configured search every `check_interval_seconds` (±30% jitter), diffs against `data/listings.json`, writes new/updated listings back. Pauses during "Nachtruhe" (22:00–06:00, hardcoded) and instead runs a once-nightly housekeeping pass at `housekeeping_hour` that checks every stored listing's URL and drops ones that are gone/deactivated (aborts the whole pass if >30% look gone at once, to avoid wiping everything out on a captcha/IP-block false signal).
-- **`app/gewobag.py`** — gewobag.de-specific fetch/parse/alive-check functions (`fetch_gewobag_search()`, `parse_gewobag_listings()`, `check_gewobag_alive()`), mirroring `crawler.py`'s kleinanzeigen-specific equivalents. Kept as a separate module so site-specific scraping logic stays isolated from the shared orchestration (config loading, merging, housekeeping loop, Nachtruhe) in `crawler.py`.
-- **`app/dashboard.py`** — Flask app on `:5000`, serves `app/templates/index.html` and a small JSON API (`/api/listings`, `/api/stats`, `/api/config`, `/api/log`, `/api/mark_seen`, `/api/delete/<id>`) that just reads/writes the same `data/*.json` files. No auth — meant for local network only. Fully source-agnostic — it never branches on which site a listing came from.
+- **`app/crawler.py`** — background loop (`run_crawler()`). Polls each configured kleinanzeigen/Gewobag search every `check_interval_seconds` (±30% jitter), diffs against `data/listings.json`, writes new/updated listings back. Pauses during "Nachtruhe" (22:00–06:00, hardcoded) and instead runs a once-nightly housekeeping pass at `housekeeping_hour` that checks every stored listing's URL and drops ones that are gone/deactivated (aborts the whole pass if >30% look gone at once, to avoid wiping everything out on a captcha/IP-block false signal).
+- **`app/gewobag.py`** — gewobag.de-specific fetch/parse/alive-check functions (`fetch_gewobag_search()`, `parse_gewobag_listings()`, `check_gewobag_alive()`), mirroring `crawler.py`'s kleinanzeigen-specific equivalents. Kept as a separate module so site-specific scraping logic stays isolated from the shared orchestration (config loading, merging, housekeeping loop, Nachtruhe) in `crawler.py`. See "Multi-source dispatch" below — Gewobag shares `crawler.py`'s process and `listings.json`.
+- **`app/howoge_crawler.py`** — a **fully separate** background process/loop for howoge.de, not a source dispatched from `crawler.py` (deliberately different from how Gewobag was integrated — see "Two different multi-source patterns" below). Has its own config (`data/howoge_config.json`), its own listings file (`data/howoge_listings.json`), its own log (`data/howoge_crawler.log`), and shares zero code with `crawler.py`. Runs the same Nachtruhe/±30%-jitter shape as `crawler.py`, but re-derives it independently. Housekeeping is simpler here: HOWOGE's search endpoint always returns its *entire* current listing stock regardless of filters, so an unfiltered fetch each cycle is enough to diff against and drop stale entries — no separate nightly pass needed (same >30%-abort safety net as `crawler.py`, though).
+- **`app/dashboard.py`** — Flask app on `:5000`, serves `app/templates/index.html` and a small JSON API (`/api/listings`, `/api/stats`, `/api/config`, `/api/log`, `/api/mark_seen`, `/api/delete/<id>`) that reads/writes the `data/*.json` files. No auth — meant for local network only. Source-agnostic with respect to kleinanzeigen/Gewobag (both already merged into one `listings.json` by `crawler.py`), but **does** know about HOWOGE specifically: `/api/listings` and `/api/stats` merge `listings.json` + `howoge_listings.json` (sorted by `found_at`, newest first, across both), `/api/delete/<id>` and `/api/mark_seen` route by the `howoge-` ID prefix to the right file, and `/api/config`/`/api/log` take an optional `?source=howoge` query param to target the HOWOGE files instead of the kleinanzeigen/Gewobag ones (default).
+
+### Two different multi-source patterns — don't mix them up
+
+This repo grew two sources (Gewobag, HOWOGE) added at different times via genuinely different architectures — know which one you're extending before copying a pattern:
+- **Gewobag** = own module (`app/gewobag.py`), but dispatched *inside* `crawler.py`'s existing process/loop/`listings.json` via a per-search `"source"` field. No new container process, no new data files.
+- **HOWOGE** = own module *and* own process (`app/howoge_crawler.py`), own `docker-entrypoint.sh` entry, own `data/howoge_*` files, merged into the dashboard only at the `dashboard.py` API layer. A bug/crash in the HOWOGE crawler cannot take down kleinanzeigen/Gewobag crawling (or vice versa), at the cost of a third always-running process and the dashboard needing source-aware merge/routing logic.
+
+If adding a fourth source, decide explicitly which pattern fits before writing code — see `docs/superpowers/specs/2026-07-24-howoge-crawler-design.md` for the reasoning behind picking the separate-process pattern for HOWOGE (short version: user preference for stronger isolation, decided during brainstorming).
 
 ### Multi-source dispatch (`source` field)
 
@@ -23,10 +32,13 @@ Unlike kleinanzeigen.de, gewobag.de's search results are plain server-rendered H
 `check_gewobag_alive()`'s "alive" signal is `class="angebot-image"` — that class only appears on a listing's own detail page (verified: absent from search-result pages, which instead use `angebot-title`/`angebot-slider` on the *card*, not the single-listing view). A removed/expired listing 404s directly (verified against a nonexistent slug) rather than redirecting, unlike kleinanzeigen's redirect-to-homepage behavior.
 
 Data files (`/data`, not in git):
-- `config.json` — searches + tuning knobs, auto-created from `DEFAULT_CONFIG` in `crawler.py` on first run if missing.
-- `listings.json` — all known listings, capped at `max_listings_stored`, newest first.
+- `config.json` — kleinanzeigen + Gewobag searches (dispatched via each entry's `"source"` field) + tuning knobs, auto-created from `DEFAULT_CONFIG` in `crawler.py` on first run if missing.
+- `listings.json` — all known kleinanzeigen/Gewobag listings, capped at `max_listings_stored`, newest first.
 - `housekeeping_state.json` — last date housekeeping ran, so it only runs once/night.
 - `crawler.log` — plain log file, tailed by both `docker compose logs` and `/api/log`.
+- `howoge_config.json` — HOWOGE searches + `check_interval_seconds`, auto-created from `DEFAULT_CONFIG` in `howoge_crawler.py` on first run if missing. Separate schema from `config.json` (see below), no `max_listings_stored` (HOWOGE's whole stock is small enough not to need a cap).
+- `howoge_listings.json` — all known HOWOGE listings, IDs prefixed `howoge-<uid>`.
+- `howoge_crawler.log` — HOWOGE crawler's own log file, tailed via `docker compose logs` and `/api/log?source=howoge`.
 
 ### Request pattern: no shared `requests.Session`
 
@@ -48,6 +60,8 @@ Gewobag searches (`"source": "gewobag"`) use a different, district-based field s
 
 There is no config-editing UI beyond the dashboard's raw JSON textarea (`/api/config`, no schema validation) — adding a Gewobag search means pasting a new entry into that textarea (or editing `data/config.json` directly on the server) and restarting.
 
+HOWOGE has its own separate config file (`data/howoge_config.json`, not `config.json`) with a third field set: `kiez` (list of Berlin Bezirk names, passed to HOWOGE's API server-side), `wbs` (`"ja"`/`"nein"`, passed server-side too), `min_rooms`/`max_rooms` (client-side post-filter — HOWOGE's own API only accepts a single exact room count, not a range, so `howoge_crawler.py` fetches unfiltered on rooms and filters locally). The dashboard's config screen has a second textarea for this file (`/api/config?source=howoge`), next to the kleinanzeigen/Gewobag one.
+
 ## Commands
 
 No build/lint/test tooling exists in this repo — verify changes with `python3 -m py_compile app/*.py` and manual runs.
@@ -55,6 +69,7 @@ No build/lint/test tooling exists in this repo — verify changes with `python3 
 ```bash
 # Local dev run (needs DATA_DIR env var or it defaults to /data, which likely isn't writable locally)
 DATA_DIR=./data python3 app/crawler.py
+DATA_DIR=./data python3 app/howoge_crawler.py
 DATA_DIR=./data python3 app/dashboard.py
 
 # Docker (see README.md for the full command list)
@@ -74,4 +89,4 @@ ssh homeserver 'cd /opt/wohnungsmonitor-docker && git pull && docker compose up 
 
 There's also an inactive/legacy `wohnungsmonitor-crawler`/`wohnungsmonitor-dashboard` systemd setup at `/home/robs/wohnungsmonitor` on the server — not the live deployment, ignore it unless told otherwise.
 
-Because of the Nachtruhe window (22:00–06:00), a container restart during quiet hours does **not** trigger an immediate crawl — it just re-enters the sleep-until-06:00 branch. To force a one-off fetch outside the normal schedule, call `crawler.py`'s functions directly inside the running container (`docker exec wohnungsmonitor python3 -c "..."`, importing from `/app/app`) rather than restarting.
+Because of the Nachtruhe window (22:00–06:00), a container restart during quiet hours does **not** trigger an immediate crawl — it just re-enters the sleep-until-06:00 branch. This applies independently to both `crawler.py` and `howoge_crawler.py` (separate processes, separate Nachtruhe checks). To force a one-off fetch outside the normal schedule, call the relevant module's functions directly inside the running container (`docker exec wohnungsmonitor python3 -c "..."`, importing from `/app/app` — `import crawler` or `import howoge_crawler`) rather than restarting.
