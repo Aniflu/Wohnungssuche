@@ -1,6 +1,6 @@
 # 🏠 Wohnungsmonitor
 
-Ebay Kleinanzeigen Crawler mit Web-Dashboard für den Heimserver.  
+Wohnungs-Crawler (Ebay Kleinanzeigen + Gewobag) mit Web-Dashboard für den Heimserver.  
 Läuft als Docker-Container, Dashboard erreichbar im lokalen Netzwerk.
 
 ## Voraussetzungen
@@ -66,12 +66,45 @@ docker compose restart
 | `no_swap` | bool | `true` = keine Tauschwohnungen |
 | `max_distance_km` | int | Post-Filter: nur Inserate ≤ X km (aus dem Location-Text extrahiert) |
 | `exclude_keywords` | string[] | Post-Filter: Inserate mit einem dieser Begriffe (Titel/Beschreibung, Groß-/Kleinschreibung egal) werden verworfen. Default: `wg-zimmer`, `wg zimmer`, `in wg`, `zwischenmiete`, `untermiete`, `befristet`, `befristung` – Kleinanzeigens Zimmer-/Tausch-Filter schließt WG-Zimmer und Zwischenmiete/Untermiete nicht zuverlässig aus, da sie zur selben Kategorie zählen und die Zimmerzahl der Gesamtwohnung angeben. Leere Liste `[]` deaktiviert den Filter. |
+| `source` | string | `"kleinanzeigen"` (Default, auch wenn das Feld fehlt) oder `"gewobag"`. Bestimmt, welche Abruf-/Parse-Logik für diese Suche verwendet wird. |
 
 **`postal_code` + `location_id` ermitteln:** Auf kleinanzeigen.de → Wohnungen mieten → Ort/PLZ eingeben → Filter setzen. Aus der Browser-URL `c{category_id}l{location_id}r{radius_km}` ablesen (z.B. `c203l3491r5`).
 
 Ältere Konfigurationen mit `city_id` + `min_price`/`max_price`/`keywords` werden weiterhin unterstützt (Fallback), liefern aber ohne `location_id` oft ungenaue Ergebnisse.
 
 Der Crawler pausiert außerdem automatisch zwischen 22:00 und 06:00 Uhr (Nachtruhe) und variiert das Check-Intervall um ±30 %, um kein festes Abfragemuster zu erzeugen.
+
+### Gewobag hinzufügen
+
+Gewobag-Suchen haben ein eigenes, bezirksbasiertes Feld-Set statt der Kleinanzeigen-Felder oben:
+
+| Feld | Typ | Beschreibung |
+|---|---|---|
+| `bezirke` | string[] | Gewobag-interne Bezirks-Slugs, direkt aus der Filter-URL auf gewobag.de ablesbar (z.B. `pankow`, `pankow-prenzlauer-berg`, `friedrichshain-kreuzberg-friedrichshain`) |
+| `zimmer_von` / `zimmer_bis` | int | Zimmeranzahl-Bereich |
+| `gesamtmiete_von` / `gesamtmiete_bis` | int | Gesamtmiete-Bereich (€) |
+| `gesamtflaeche_von` / `gesamtflaeche_bis` | int | Wohnfläche-Bereich (m²) |
+| `objekttyp` | string[] | Default `["wohnung"]` |
+| `exclude_keywords` | string[] | Wie oben, Default hier `[]` (Gewobags "Wohnung"-Kategorie ist bereits kuratiert) |
+
+Beispiel-Eintrag für `data/config.json` (über den Config-Editor im Dashboard einfügbar):
+
+```json
+{
+  "name": "Gewobag – Friedrichshain/Pankow",
+  "source": "gewobag",
+  "bezirke": [
+    "friedrichshain-kreuzberg-friedrichshain",
+    "pankow",
+    "pankow-prenzlauer-berg",
+    "pankow-rosenthal",
+    "pankow-weissensee"
+  ],
+  "zimmer_von": 3
+}
+```
+
+Danach wie gewohnt `docker compose restart` (oder den Container neu starten), damit der Crawler die geänderte Config einliest.
 
 ### Housekeeping (nächtliche Aufräum-Prüfung)
 

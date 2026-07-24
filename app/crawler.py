@@ -17,6 +17,8 @@ from pathlib import Path
 import requests
 from bs4 import BeautifulSoup
 
+from gewobag import check_gewobag_alive, fetch_gewobag_search
+
 # ── Pfade ─────────────────────────────────────────────────────────────────────
 DATA_DIR       = Path(os.environ.get("DATA_DIR", "/data"))
 CONFIG_FILE    = DATA_DIR / "config.json"
@@ -205,6 +207,7 @@ def parse_listings(html: str, search_name: str) -> list:
                 "search_name": search_name,
                 "found_at": datetime.now().isoformat(),
                 "is_new": True,
+                "source": "kleinanzeigen",
             })
 
         except Exception as e:
@@ -352,7 +355,10 @@ def run_housekeeping(listings: list) -> tuple[list, int, bool]:
     kept = []
     gone = []
     for l in listings:
-        status = check_listing_alive(l.get("url", ""))
+        if l.get("source") == "gewobag":
+            status = check_gewobag_alive(l.get("url", ""))
+        else:
+            status = check_listing_alive(l.get("url", ""))
         if status == "gone":
             gone.append(l)
         else:
@@ -446,7 +452,10 @@ def run_crawler():
 
         total_new = 0
         for search in config.get("searches", []):
-            fresh = fetch_search(search)
+            if search.get("source") == "gewobag":
+                fresh = fetch_gewobag_search(search)
+            else:
+                fresh = fetch_search(search)
             listings, new_count = merge_listings(
                 listings, fresh, config.get("max_listings_stored", 500)
             )

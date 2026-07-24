@@ -4,14 +4,23 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-Wohnungsmonitor: a kleinanzeigen.de apartment-listing crawler with a Flask web dashboard, meant to run as a single Docker container on a home server. No test suite, no build step, no linter configured — it's three plain Python files plus a template.
+Wohnungsmonitor: an apartment-listing crawler (kleinanzeigen.de + gewobag.de) with a Flask web dashboard, meant to run as a single Docker container on a home server. No test suite, no build step, no linter configured.
 
 ## Architecture
 
 Two long-running Python processes started by `docker-entrypoint.sh` inside one container, communicating only through JSON files on a shared volume (`/data`, mounted from `./data` via `docker-compose.yml`) — there is no database and no in-process communication between them:
 
-- **`app/crawler.py`** — background loop (`run_crawler()`). Polls kleinanzeigen.de search results every `check_interval_seconds` (±30% jitter), diffs against `data/listings.json`, writes new/updated listings back. Pauses during "Nachtruhe" (22:00–06:00, hardcoded) and instead runs a once-nightly housekeeping pass at `housekeeping_hour` that checks every stored listing's URL and drops ones that are gone/deactivated (aborts the whole pass if >30% look gone at once, to avoid wiping everything out on a captcha/IP-block false signal).
-- **`app/dashboard.py`** — Flask app on `:5000`, serves `app/templates/index.html` and a small JSON API (`/api/listings`, `/api/stats`, `/api/config`, `/api/log`, `/api/mark_seen`, `/api/delete/<id>`) that just reads/writes the same `data/*.json` files. No auth — meant for local network only.
+- **`app/crawler.py`** — background loop (`run_crawler()`). Polls each configured search every `check_interval_seconds` (±30% jitter), diffs against `data/listings.json`, writes new/updated listings back. Pauses during "Nachtruhe" (22:00–06:00, hardcoded) and instead runs a once-nightly housekeeping pass at `housekeeping_hour` that checks every stored listing's URL and drops ones that are gone/deactivated (aborts the whole pass if >30% look gone at once, to avoid wiping everything out on a captcha/IP-block false signal).
+- **`app/gewobag.py`** — gewobag.de-specific fetch/parse/alive-check functions (`fetch_gewobag_search()`, `parse_gewobag_listings()`, `check_gewobag_alive()`), mirroring `crawler.py`'s kleinanzeigen-specific equivalents. Kept as a separate module so site-specific scraping logic stays isolated from the shared orchestration (config loading, merging, housekeeping loop, Nachtruhe) in `crawler.py`.
+- **`app/dashboard.py`** — Flask app on `:5000`, serves `app/templates/index.html` and a small JSON API (`/api/listings`, `/api/stats`, `/api/config`, `/api/log`, `/api/mark_seen`, `/api/delete/<id>`) that just reads/writes the same `data/*.json` files. No auth — meant for local network only. Fully source-agnostic — it never branches on which site a listing came from.
+
+### Multi-source dispatch (`source` field)
+
+Each search entry in `config.json["searches"]` has a `"source"` field (`"kleinanzeigen"` or `"gewobag"`; missing/absent defaults to `"kleinanzeigen"` for backward compatibility with configs predating this field). `run_crawler()`'s search loop and `run_housekeeping()`'s per-listing loop both dispatch on this field to call either the `crawler.py` kleinanzeigen functions or the `gewobag.py` equivalents. Every listing dict also carries the same `"source"` value, and Gewobag listing IDs are prefixed `gewobag-` (the detail-page URL slug, e.g. `gewobag-6011-31046-0409-0382`) so they can never collide with kleinanzeigen's plain numeric ad IDs in the single shared `listings.json`/`existing_ids` set used by `merge_listings()`.
+
+Unlike kleinanzeigen.de, gewobag.de's search results are plain server-rendered HTML (WordPress) with no observed bot-protection — `parse_gewobag_listings()` scrapes `article.gw-offer` blocks directly, and pagination is followed via the actual `a.next.page-numbers` link found in each page's HTML (its path differs from page 1's, so it's not constructed manually) rather than a fixed pattern. `fetch_gewobag_search()` still issues a fresh `requests.get()` per page as a conservative default, even though no session-reuse issue has actually been observed there (see the kleinanzeigen note below for why that discipline matters once bot protection *is* present).
+
+`check_gewobag_alive()`'s "alive" signal is `class="angebot-image"` — that class only appears on a listing's own detail page (verified: absent from search-result pages, which instead use `angebot-title`/`angebot-slider` on the *card*, not the single-listing view). A removed/expired listing 404s directly (verified against a nonexistent slug) rather than redirecting, unlike kleinanzeigen's redirect-to-homepage behavior.
 
 Data files (`/data`, not in git):
 - `config.json` — searches + tuning knobs, auto-created from `DEFAULT_CONFIG` in `crawler.py` on first run if missing.
@@ -34,6 +43,10 @@ If tightening these filters further, test against real stored data first (dump `
 ## Config fields (`data/config.json`, per search)
 
 See README.md's field table for the full list. Notable ones beyond kleinanzeigen's native URL params: `max_distance_km` and `exclude_keywords` are both client-side post-filters, not passed to kleinanzeigen's URL.
+
+Gewobag searches (`"source": "gewobag"`) use a different, district-based field set instead: `bezirke` (list of Gewobag district slugs, taken straight from their site's own filter URL, e.g. `pankow`, `pankow-prenzlauer-berg`, `friedrichshain-kreuzberg-friedrichshain`), `zimmer_von`/`zimmer_bis`, `gesamtmiete_von`/`gesamtmiete_bis`, `gesamtflaeche_von`/`gesamtflaeche_bis`, `objekttyp` (default `["wohnung"]`). `max_distance_km` doesn't apply (Gewobag has no radius concept, only districts); `exclude_keywords` still works if set, but defaults to `[]` since Gewobag's own "Wohnung" category is curated and doesn't mix in WG-Zimmer/Zwischenmiete the way kleinanzeigen's does.
+
+There is no config-editing UI beyond the dashboard's raw JSON textarea (`/api/config`, no schema validation) — adding a Gewobag search means pasting a new entry into that textarea (or editing `data/config.json` directly on the server) and restarting.
 
 ## Commands
 
