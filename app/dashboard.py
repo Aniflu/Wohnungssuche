@@ -45,7 +45,9 @@ def load_all_listings() -> list:
     listings = load_listings()
     for l in listings:
         l.setdefault("source", "kleinanzeigen")
-    return listings + load_howoge_listings()
+    combined = listings + load_howoge_listings()
+    combined.sort(key=lambda l: l.get("found_at") or "", reverse=True)
+    return combined
 
 
 @app.route("/")
