@@ -677,7 +677,7 @@ function cardHTML(l) {
     ${l.location ? `<div class="card-meta"><span>📍 ${esc(l.location)}</span></div>` : ''}
     ${l.description ? `<div class="card-desc">${esc(l.description)}</div>` : ''}
     <div class="card-footer">
-      <span class="card-tag">${esc(l.search_name || '')}</span>
+      <span class="card-tag">${esc(l.search_name || '')} · ${l.source === 'howoge' ? 'HOWOGE' : 'Kleinanzeigen'}</span>
       <div class="card-actions">
         <span class="card-time">${time}</span>
         <button class="del-btn" onclick="deleteListing('${esc(l.id)}')" title="Entfernen">✕</button>
