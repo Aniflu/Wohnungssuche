@@ -483,14 +483,22 @@ header {
   <!-- ── Screen: Konfiguration ── -->
   <div class="screen" id="screen-config">
     <div class="config-screen">
-      <h2>KONFIGURATION</h2>
+      <h2>KONFIGURATION – KLEINANZEIGEN</h2>
       <div class="config-info">
         Nach dem Speichern Crawler neu starten:<br>
         <code>docker compose restart</code>
       </div>
       <textarea id="config-json" spellcheck="false"></textarea>
       <div style="margin-top:10px">
-        <button class="action-btn primary" onclick="saveConfig()">
+        <button class="action-btn primary" onclick="saveConfig('kleinanzeigen')">
+          <span class="action-icon">💾</span> Speichern
+        </button>
+      </div>
+
+      <h2 style="margin-top:24px">KONFIGURATION – HOWOGE</h2>
+      <textarea id="config-json-howoge" spellcheck="false"></textarea>
+      <div style="margin-top:10px">
+        <button class="action-btn primary" onclick="saveConfig('howoge')">
           <span class="action-icon">💾</span> Speichern
         </button>
       </div>
@@ -520,7 +528,7 @@ header {
     <span class="nav-icon">📊</span>
     <span>Übersicht</span>
   </button>
-  <button class="nav-item" id="nav-config" onclick="showScreen('config'); loadConfig()">
+  <button class="nav-item" id="nav-config" onclick="showScreen('config')">
     <span class="nav-icon">⚙</span>
     <span>Einstellung</span>
   </button>
@@ -705,18 +713,20 @@ async function deleteListing(id) {
 }
 
 // ── Config ─────────────────────────────────────────────
-async function loadConfig() {
-  const r = await fetch('/api/config');
+async function loadConfig(source = 'kleinanzeigen') {
+  const r = await fetch('/api/config?source=' + source);
   const cfg = await r.json();
-  const el = document.getElementById('config-json');
+  const elId = source === 'howoge' ? 'config-json-howoge' : 'config-json';
+  const el = document.getElementById(elId);
   if (el) el.value = JSON.stringify(cfg, null, 2);
 }
 
-async function saveConfig() {
+async function saveConfig(source = 'kleinanzeigen') {
   try {
-    const val = document.getElementById('config-json').value;
+    const elId = source === 'howoge' ? 'config-json-howoge' : 'config-json';
+    const val = document.getElementById(elId).value;
     const cfg = JSON.parse(val);
-    await fetch('/api/config', {
+    await fetch('/api/config?source=' + source, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(cfg),
@@ -750,7 +760,7 @@ function showScreen(name) {
     document.getElementById('screen-' + s).classList.toggle('active', s === name);
     document.getElementById('nav-' + s).classList.toggle('active', s === name);
   });
-  if (name === 'config') loadConfig();
+  if (name === 'config') { loadConfig('kleinanzeigen'); loadConfig('howoge'); }
   if (name === 'log')    loadLog();
 }
 
@@ -777,15 +787,23 @@ async function showDesktopTab(name, render = true) {
   } else if (name === 'config') {
     const r = await fetch('/api/config');
     const cfg = await r.json();
+    const rh = await fetch('/api/config?source=howoge');
+    const cfgHowoge = await rh.json();
     dc.innerHTML = `
       <div style="padding:20px">
         <div class="config-info" style="margin-bottom:12px">
           Nach dem Speichern Crawler neu starten:<br>
           <code>docker compose restart</code>
         </div>
-        <textarea id="config-json" spellcheck="false" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:14px;color:var(--text);font-size:12px;font-family:'DM Mono',monospace;line-height:1.7;outline:none;min-height:400px;resize:vertical">${JSON.stringify(cfg, null, 2)}</textarea>
+        <h2 style="font-size:11px;letter-spacing:0.1em;color:var(--muted);margin-bottom:6px">KLEINANZEIGEN</h2>
+        <textarea id="config-json" spellcheck="false" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:14px;color:var(--text);font-size:12px;font-family:'DM Mono',monospace;line-height:1.7;outline:none;min-height:300px;resize:vertical">${JSON.stringify(cfg, null, 2)}</textarea>
         <div style="margin-top:12px">
-          <button class="action-btn primary" onclick="saveConfig()" style="max-width:200px">💾 Speichern</button>
+          <button class="action-btn primary" onclick="saveConfig('kleinanzeigen')" style="max-width:200px">💾 Speichern</button>
+        </div>
+        <h2 style="font-size:11px;letter-spacing:0.1em;color:var(--muted);margin:20px 0 6px">HOWOGE</h2>
+        <textarea id="config-json-howoge" spellcheck="false" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:14px;color:var(--text);font-size:12px;font-family:'DM Mono',monospace;line-height:1.7;outline:none;min-height:300px;resize:vertical">${JSON.stringify(cfgHowoge, null, 2)}</textarea>
+        <div style="margin-top:12px">
+          <button class="action-btn primary" onclick="saveConfig('howoge')" style="max-width:200px">💾 Speichern</button>
         </div>
       </div>`;
   } else if (name === 'log') {
