@@ -173,5 +173,47 @@ def merge_listings(existing: list, fresh: list) -> tuple[list, int]:
     return existing, new_count
 
 
+def fetch_all_active_ids() -> set | None:
+    """Ungefilterte Anfrage an den immoList-Endpoint, um alle aktuell aktiven
+    HOWOGE-IDs zu ermitteln. Gibt bei einem Netzwerkfehler None zurück (statt
+    zu werfen), damit der Aufrufer Housekeeping diesen Zyklus einfach
+    überspringen kann, statt versehentlich alles als "gone" zu werten."""
+    try:
+        raw = fetch_immo_objects([], "")
+        return {f"howoge-{obj['uid']}" for obj in raw if obj.get("uid") is not None}
+    except requests.exceptions.RequestException as e:
+        log.warning(f"[Housekeeping] Verbindungsfehler: {e}")
+        return None
+
+
+def run_housekeeping(listings: list, active_ids: set) -> tuple[list, int, bool]:
+    """Entfernt Anzeigen, die nicht mehr im aktuellen HOWOGE-Bestand
+    auftauchen. Bricht sicherheitshalber ohne Löschung ab, wenn auffällig
+    viele Anzeigen auf einmal fehlen (z. B. bei einem API-Ausfall), statt
+    versehentlich fast die ganze Liste zu leeren.
+
+    Rückgabe: (verbleibende Anzeigen, Anzahl entfernt, ob abgebrochen wurde)
+    """
+    ABORT_THRESHOLD = 0.3
+    MIN_FOR_THRESHOLD = 5
+
+    kept = [l for l in listings if l["id"] in active_ids]
+    gone = [l for l in listings if l["id"] not in active_ids]
+
+    total = len(listings)
+    if total >= MIN_FOR_THRESHOLD and len(gone) / total > ABORT_THRESHOLD:
+        log.warning(
+            f"[Housekeeping] Abgebrochen: {len(gone)}/{total} Anzeigen als "
+            f"gelöscht erkannt – das ist ungewöhnlich viel. Es wird nichts "
+            f"gelöscht, nächster Versuch beim nächsten Zyklus."
+        )
+        return listings, 0, True
+
+    for l in gone:
+        log.info(f"[Housekeeping] Entfernt: {l.get('id')} – {l.get('title')}")
+
+    return kept, len(gone), False
+
+
 if __name__ == "__main__":
     pass
