@@ -14,3 +14,6 @@ venv/
 # Editoren
 .DS_Store
 Thumbs.db
+
+# Subagent-driven-development Fortschritts-Ledger (Scratch, nicht versioniert)
+.superpowers/
