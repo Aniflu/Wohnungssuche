@@ -184,6 +184,9 @@ def fetch_all_active_ids() -> set | None:
     except requests.exceptions.RequestException as e:
         log.warning(f"[Housekeeping] Verbindungsfehler: {e}")
         return None
+    except Exception as e:
+        log.warning(f"[Housekeeping] Fehler: {e}")
+        return None
 
 
 def run_housekeeping(listings: list, active_ids: set) -> tuple[list, int, bool]:
