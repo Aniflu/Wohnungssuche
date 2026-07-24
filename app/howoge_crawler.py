@@ -70,5 +70,72 @@ def save_listings(listings: list):
     LISTINGS_FILE.write_text(json.dumps(listings, indent=2, ensure_ascii=False))
 
 
+def fetch_immo_objects(kiez: list, wbs: str) -> list:
+    """Ruft den HOWOGE-immoList-Endpoint ab. Eine leere `kiez`-Liste bzw. ein
+    leerer `wbs`-String bedeuten "kein Filter" (alle Bezirke / unabhängig von
+    WBS-Status). `page`/`limit` gibt es beim Endpoint zwar, werden vom Server
+    aber ignoriert – jede Anfrage liefert immer den kompletten aktuell
+    passenden Bestand zurück (per curl verifiziert), daher werden sie hier
+    gar nicht erst mitgeschickt.
+    """
+    params = {
+        "type": "999",
+        "tx_howrealestate_json_list[action]": "immoList",
+    }
+    if kiez:
+        params["tx_howrealestate_json_list[kiez][]"] = kiez
+    if wbs:
+        params["tx_howrealestate_json_list[wbs]"] = wbs
+
+    headers = {
+        "User-Agent": "Mozilla/5.0 (X11; Linux x86_64; rv:125.0) Gecko/20100101 Firefox/125.0",
+        "Accept": "application/json, text/javascript, */*; q=0.01",
+        "Accept-Language": "de-DE,de;q=0.9",
+    }
+    resp = requests.get("https://www.howoge.de/", params=params, headers=headers, timeout=20)
+    resp.raise_for_status()
+    return resp.json().get("immoobjects", [])
+
+
+def parse_immo_objects(raw_objects: list, search: dict) -> list:
+    """Wandelt rohe immoList-Objekte in unser Listing-Schema um und filtert
+    nach Zimmerzahl (min_rooms/max_rooms), da die HOWOGE-API dafür nur exakte
+    Werte akzeptiert, keine Ranges.
+    """
+    min_rooms = search.get("min_rooms", 1)
+    max_rooms = search.get("max_rooms", 99)
+    results = []
+
+    for obj in raw_objects:
+        rooms = obj.get("rooms")
+        if rooms is None or not (min_rooms <= rooms <= max_rooms):
+            continue
+
+        features = ", ".join(obj.get("features", []))
+        notice = (obj.get("notice") or "").strip()
+        description = f"{notice} – {features}" if notice and features else (notice or features)
+
+        link = obj.get("link", "")
+        image = obj.get("image", "")
+        url = f"https://www.howoge.de{link}" if link.startswith("/") else link
+        img = f"https://www.howoge.de{image}" if image.startswith("/") else image
+
+        results.append({
+            "id": f"howoge-{obj['uid']}",
+            "title": obj.get("title", "–"),
+            "price": f"{obj.get('rent', '')} €".strip(),
+            "location": obj.get("district", ""),
+            "description": description,
+            "url": url,
+            "image": img,
+            "search_name": search["name"],
+            "source": "howoge",
+            "found_at": datetime.now().isoformat(),
+            "is_new": True,
+        })
+
+    return results
+
+
 if __name__ == "__main__":
     pass
