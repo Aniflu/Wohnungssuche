@@ -153,5 +153,25 @@ def fetch_search(search: dict) -> list:
     return []
 
 
+def merge_listings(existing: list, fresh: list) -> tuple[list, int]:
+    """Fügt neue HOWOGE-Inserate zur bestehenden Liste hinzu. Gibt
+    (merged, new_count) zurück."""
+    existing_ids = {l["id"] for l in existing}
+    new_count = 0
+
+    for item in fresh:
+        if item["id"] not in existing_ids:
+            existing.insert(0, item)
+            existing_ids.add(item["id"])
+            new_count += 1
+        else:
+            for ex in existing:
+                if ex["id"] == item["id"]:
+                    ex["is_new"] = False
+                    break
+
+    return existing, new_count
+
+
 if __name__ == "__main__":
     pass
