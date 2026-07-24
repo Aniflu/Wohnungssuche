@@ -98,6 +98,12 @@ def mark_seen():
     for l in listings:
         l["is_new"] = False
     LISTINGS_FILE.write_text(json.dumps(listings, indent=2, ensure_ascii=False))
+
+    howoge = load_howoge_listings()
+    for l in howoge:
+        l["is_new"] = False
+    HOWOGE_LISTINGS_FILE.write_text(json.dumps(howoge, indent=2, ensure_ascii=False))
+
     return jsonify({"ok": True})
 
 
@@ -120,8 +126,12 @@ def api_log():
 
 @app.route("/api/delete/<listing_id>", methods=["DELETE"])
 def delete_listing(listing_id):
-    listings = [l for l in load_listings() if l.get("id") != listing_id]
-    LISTINGS_FILE.write_text(json.dumps(listings, indent=2, ensure_ascii=False))
+    if listing_id.startswith("howoge-"):
+        listings = [l for l in load_howoge_listings() if l.get("id") != listing_id]
+        HOWOGE_LISTINGS_FILE.write_text(json.dumps(listings, indent=2, ensure_ascii=False))
+    else:
+        listings = [l for l in load_listings() if l.get("id") != listing_id]
+        LISTINGS_FILE.write_text(json.dumps(listings, indent=2, ensure_ascii=False))
     return jsonify({"ok": True})
 
 
