@@ -441,9 +441,14 @@ def run_crawler():
     log.info("═" * 50)
 
     while True:
+        # Config-Dateien immer laden (nicht erst im aktiven Zweig), damit
+        # gewobag_config.json auch dann angelegt wird, wenn der Container
+        # während der Nachtruhe startet/neu startet.
+        config = load_config()
+        gewobag_config = load_gewobag_config()
+
         # Nachtruhe: zwischen 22 und 6 Uhr kein Crawling
         if is_quiet_hours(22, 6):
-            config = load_config()
             hk_hour = config.get("housekeeping_hour", 2)
 
             if hk_hour >= 22 or hk_hour < 6:
@@ -474,8 +479,6 @@ def run_crawler():
             sleep_until(6)
             continue
 
-        config = load_config()
-        gewobag_config = load_gewobag_config()
         listings = load_listings()
         max_stored = config.get("max_listings_stored", 500)
 

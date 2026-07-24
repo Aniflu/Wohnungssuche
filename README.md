@@ -1,6 +1,6 @@
 # 🏠 Wohnungsmonitor
 
-Wohnungs-Crawler (Ebay Kleinanzeigen + Gewobag) mit Web-Dashboard für den Heimserver.  
+Wohnungs-Crawler (Ebay Kleinanzeigen + Gewobag + HOWOGE) mit Web-Dashboard für den Heimserver.  
 Läuft als Docker-Container, Dashboard erreichbar im lokalen Netzwerk.
 
 ## Voraussetzungen
@@ -111,16 +111,48 @@ Beispiel-Inhalt von `data/gewobag_config.json` (über den "GEWOBAG"-Tab im Dashb
 
 Danach wie gewohnt `docker compose restart` (oder den Container neu starten), damit der Crawler die geänderte Config einliest.
 
+### HOWOGE konfigurieren
+
+HOWOGE läuft als eigenständiger dritter Prozess (`app/howoge_crawler.py`, unabhängig von Kleinanzeigen/Gewobag) mit eigener Config-Datei `data/howoge_config.json`, eigenem "HOWOGE"-Tab im Dashboard und eigenem `check_interval_seconds` (unabhängig von `config.json`, da eigener Loop).
+
+| Feld | Typ | Beschreibung |
+|---|---|---|
+| `kiez` | string[] | Berlin-Bezirksnamen (z.B. `"Friedrichshain-Kreuzberg"`, `"Mitte"`, `"Pankow"`), wird serverseitig an HOWOGEs API übergeben |
+| `wbs` | string | `"ja"` / `"nein"`, serverseitig gefiltert |
+| `min_rooms` / `max_rooms` | int | Zimmeranzahl-Bereich – clientseitiger Post-Filter, da HOWOGEs API nur exakte Zimmerzahlen akzeptiert, keine Bereiche |
+| `check_interval_seconds` | int | Eigenes Poll-Intervall, unabhängig vom Kleinanzeigen/Gewobag-Intervall |
+
+Beispiel-Inhalt von `data/howoge_config.json`:
+
+```json
+{
+  "searches": [
+    {
+      "name": "Berlin – 3 Zimmer",
+      "kiez": ["Friedrichshain-Kreuzberg", "Mitte", "Pankow"],
+      "min_rooms": 3,
+      "max_rooms": 6,
+      "wbs": "nein"
+    }
+  ],
+  "check_interval_seconds": 300
+}
+```
+
+HOWOGEs Housekeeping läuft anders als bei Kleinanzeigen/Gewobag: statt einer nächtlichen Einzelprüfung wird bei jedem Zyklus der komplette aktuelle Bestand ungefiltert abgerufen und damit abgeglichen, welche gespeicherten Anzeigen nicht mehr enthalten sind (kein separater Nachtlauf nötig). Auch hier bricht ein Abgleich ohne Löschung ab, wenn ungewöhnlich viele Anzeigen auf einmal fehlen.
+
 ### Housekeeping (nächtliche Aufräum-Prüfung)
 
-Einmal pro Nacht, zur in `housekeeping_hour` konfigurierten Stunde (Standard: 2 Uhr,
+Gilt für Kleinanzeigen und Gewobag (beide teilen sich `crawler.py`s Prozess). Einmal
+pro Nacht, zur in `housekeeping_hour` konfigurierten Stunde (Standard: 2 Uhr,
 lokale Containerzeit), prüft der Crawler innerhalb der Nachtruhe jede gespeicherte
-Anzeige einzeln darauf, ob sie auf kleinanzeigen.de inzwischen gelöscht, deaktiviert
-oder abgelaufen ist, und entfernt betroffene Einträge endgültig aus
-`data/listings.json`. `housekeeping_hour` muss innerhalb des Nachtruhe-Fensters
+Anzeige einzeln darauf, ob sie auf kleinanzeigen.de bzw. gewobag.de inzwischen
+gelöscht, deaktiviert oder abgelaufen ist, und entfernt betroffene Einträge endgültig
+aus `data/listings.json`. `housekeeping_hour` muss innerhalb des Nachtruhe-Fensters
 (22–6 Uhr) liegen, sonst wird der Wert ignoriert (Warnung im Log). Ergebnisse
 (entfernte Anzeigen, evtl. Abbruch bei ungewöhnlich vielen Treffern – z. B. bei
-einer IP-Sperre) stehen in `data/crawler.log`.
+einer IP-Sperre) stehen in `data/crawler.log`. (HOWOGEs Housekeeping läuft anders,
+siehe Abschnitt "HOWOGE konfigurieren" oben.)
 
 ## Updates einspielen
 
