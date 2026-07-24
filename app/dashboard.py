@@ -16,6 +16,10 @@ LISTINGS_FILE = DATA_DIR / "listings.json"
 CONFIG_FILE   = DATA_DIR / "config.json"
 LOG_FILE      = DATA_DIR / "crawler.log"
 
+HOWOGE_LISTINGS_FILE = DATA_DIR / "howoge_listings.json"
+HOWOGE_CONFIG_FILE   = DATA_DIR / "howoge_config.json"
+HOWOGE_LOG_FILE      = DATA_DIR / "howoge_crawler.log"
+
 app = Flask(__name__, template_folder="templates")
 
 
@@ -26,6 +30,22 @@ def load_listings() -> list:
         except Exception:
             return []
     return []
+
+
+def load_howoge_listings() -> list:
+    if HOWOGE_LISTINGS_FILE.exists():
+        try:
+            return json.loads(HOWOGE_LISTINGS_FILE.read_text())
+        except Exception:
+            return []
+    return []
+
+
+def load_all_listings() -> list:
+    listings = load_listings()
+    for l in listings:
+        l.setdefault("source", "kleinanzeigen")
+    return listings + load_howoge_listings()
 
 
 def load_config() -> dict:
@@ -41,7 +61,7 @@ def index():
 
 @app.route("/api/listings")
 def api_listings():
-    listings    = load_listings()
+    listings    = load_all_listings()
     search_name = request.args.get("search")
     only_new    = request.args.get("new") == "1"
     query       = request.args.get("q", "").lower()
@@ -60,7 +80,7 @@ def api_listings():
 
 @app.route("/api/stats")
 def api_stats():
-    listings  = load_listings()
+    listings  = load_all_listings()
     new_count = sum(1 for l in listings if l.get("is_new"))
     searches  = sorted({l.get("search_name", "–") for l in listings})
     last_found = listings[0].get("found_at") if listings else None
