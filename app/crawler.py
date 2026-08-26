@@ -75,9 +75,69 @@ DEFAULT_GEWOBAG_CONFIG = {
 # "Wohnung mieten" gehören und die Zimmerzahl der Gesamtwohnung angeben.
 # Wird daher zusätzlich per Stichwort auf Titel+Beschreibung gefiltert.
 DEFAULT_EXCLUDE_KEYWORDS = [
-    "wg-zimmer", "wg zimmer", "in wg",
+    "wg-zimmer", "wg zimmer", "in wg", "private room", "privatzimmer",
     "zwischenmiete", "untermiete", "befristet", "befristung",
+    # Nachmieter-Inserate sind zwar Angebote, aber praktisch immer eine
+    # Übernahme/Zwischenmiete. Verifiziert an echten Daten: alle 7 Treffer,
+    # die nur über die Beschreibung matchen, waren echt (keine Fehltreffer).
+    # "nachmiete" statt "nachmieter", damit auch "(Nachmiete)" greift.
+    "nachmiete",
+    "auf zeit", "zeitmiete", "zwischenmieter", "temporär", "temporaer",
+    "sublease", "sublet",
+    # Englischsprachige Kurzzeit-Inserate; "monate" bewusst NICHT in der Liste,
+    # das würde auf "3 Monate Kaution" in normalen Angeboten fehlschlagen.
+    " months", "eine woche", " a week",
+    # Möbliert ist auf kleinanzeigen fast durchgehend Kurzzeit-/Zwischenmiete.
+    "möbliert", "moebliert", "furnished",
 ]
+
+# Gesuche (jemand sucht eine Wohnung) landen trotz Kategorie "Wohnung mieten"
+# in den Ergebnissen: kleinanzeigen liefert je nach Abruf Angebote und Gesuche
+# gemischt aus, auch ohne "anzeige:gesuche" in der URL (im Log nachgewiesen).
+# Nur gegen den TITEL geprüft — in Beschreibungen ist "Sie suchen ..." als
+# Werbetext viel zu häufig, das würde massenhaft Fehltreffer erzeugen.
+DEFAULT_EXCLUDE_TITLE_KEYWORDS = [
+    "gesuch", "gesucht", "suche ", "suchen ", "sucht ",
+]
+
+
+def _normalize(text: str) -> str:
+    """Kleinschreibung + Umlaute auf ae/oe/ue, damit Stichwörter unabhängig
+    von der Schreibweise greifen ("möbliert" == "moebliert")."""
+    text = text.lower()
+    for umlaut, ersatz in (("ä", "ae"), ("ö", "oe"), ("ü", "ue"), ("ß", "ss")):
+        text = text.replace(umlaut, ersatz)
+    return text
+
+
+def matched_exclude_keyword(listing: dict, search: dict) -> str | None:
+    """Prüft ein Inserat gegen die Ausschluss-Stichwörter einer Suche.
+    Gibt das erste treffende Stichwort zurück, sonst None."""
+    exclude_keywords = search.get("exclude_keywords", DEFAULT_EXCLUDE_KEYWORDS)
+    exclude_title_keywords = search.get("exclude_title_keywords", DEFAULT_EXCLUDE_TITLE_KEYWORDS)
+
+    title = _normalize(listing.get("title", ""))
+    full = _normalize(f"{listing.get('title', '')} {listing.get('description', '')}")
+
+    for kw in exclude_title_keywords:
+        if _normalize(kw) in title:
+            return kw
+    for kw in exclude_keywords:
+        if _normalize(kw) in full:
+            return kw
+    return None
+
+
+def apply_keyword_filter(listings: list, search: dict, log_prefix: str = "") -> list:
+    """Entfernt WG-Zimmer, Zwischenmieten und Gesuche aus einer Trefferliste."""
+    kept = []
+    for l in listings:
+        kw = matched_exclude_keyword(l, search)
+        if kw:
+            log.debug(f"[{log_prefix}] Gefiltert (»{kw}«): {l.get('title', '')[:70]}")
+        else:
+            kept.append(l)
+    return kept
 
 # ── Logging ───────────────────────────────────────────────────────────────────
 logging.basicConfig(
@@ -270,16 +330,9 @@ def fetch_search(search: dict) -> list:
         resp.raise_for_status()
         listings = parse_listings(resp.text, search["name"])
 
-        exclude_keywords = search.get("exclude_keywords", DEFAULT_EXCLUDE_KEYWORDS)
-        if exclude_keywords:
-            before = len(listings)
-
-            def is_excluded(l: dict) -> bool:
-                text = f"{l.get('title', '')} {l.get('description', '')}".lower()
-                return any(kw.lower() in text for kw in exclude_keywords)
-
-            listings = [l for l in listings if not is_excluded(l)]
-            log.info(f"[{search['name']}] {len(listings)}/{before} Inserate nach Stichwort-Filter (WG/Zwischenmiete)")
+        before = len(listings)
+        listings = apply_keyword_filter(listings, search, log_prefix=search["name"])
+        log.info(f"[{search['name']}] {len(listings)}/{before} Inserate nach Stichwort-Filter (WG/Zwischenmiete/Gesuche)")
 
         max_km = search.get("max_distance_km")
         if max_km is not None:
